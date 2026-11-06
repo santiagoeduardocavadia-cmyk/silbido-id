@@ -1,0 +1,11 @@
+{
+  "name": "silbido-id",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web para grabar, filtrar, analizar y reconocer silbidos (Procesamiento de Señales II).",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/dsp.test.mjs",
+    "start": "node scripts/serve.mjs 8000"
+  }
+}

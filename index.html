@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Silbido ID</title>
+  <meta name="description" content="Graba tu silbido, fíltralo, analízalo con FFT, STFT y wavelets, crea tu huella y verifica quién silba. Proyecto de Procesamiento de Señales II.">
+  <meta name="theme-color" content="#2a78d6">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232a78d6'/%3E%3Cpath d='M5 16c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-14 5-14 2.5 7 5 7' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/styles.css">
+  <script>
+    // Aplica el tema guardado antes de pintar (evita parpadeo)
+    try { var t = localStorage.getItem('silbido-id:theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <a class="skip" href="#main">Saltar al contenido</a>
+  <header class="app-header">
+    <div class="header-inner">
+      <a class="brand" href="#grabar" aria-label="Silbido ID, inicio">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="34" height="34"><rect width="32" height="32" rx="9" fill="currentColor"/><path d="M5 16c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-14 5-14 2.5 7 5 7" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>
+        </span>
+        <span class="brand-text"><strong>Silbido ID</strong><small>Filtra, analiza y reconoce silbidos</small></span>
+      </a>
+      <nav class="tabs" role="tablist" aria-label="Secciones">
+        <button type="button" role="tab" id="tabbtn-grabar" aria-controls="tab-grabar" data-tab="grabar"><span class="tab-num">1</span>Grabar</button>
+        <button type="button" role="tab" id="tabbtn-analisis" aria-controls="tab-analisis" data-tab="analisis"><span class="tab-num">2</span>Análisis</button>
+        <button type="button" role="tab" id="tabbtn-filtro" aria-controls="tab-filtro" data-tab="filtro"><span class="tab-num">3</span>Filtro</button>
+        <button type="button" role="tab" id="tabbtn-perfiles" aria-controls="tab-perfiles" data-tab="perfiles"><span class="tab-num">4</span>Perfiles</button>
+        <button type="button" role="tab" id="tabbtn-verificar" aria-controls="tab-verificar" data-tab="verificar"><span class="tab-num">5</span>Verificar</button>
+      </nav>
+      <button type="button" class="icon-btn theme-btn" id="theme-btn" aria-label="Cambiar tema"></button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ======================= 1 · GRABAR ======================= -->
+    <section class="tab-panel" id="tab-grabar" role="tabpanel" aria-labelledby="tabbtn-grabar">
+      <div class="hero">
+        <div class="hero-text">
+          <p class="eyebrow">Procesamiento de Señales II · Reto del silbido</p>
+          <h1>Crea la huella de tu silbido</h1>
+          <p>Graba <b>5 silbidos de 5 segundos</b>. La web los filtra, los analiza con FFT, STFT y wavelets, elige la mejor toma y guarda tu perfil. Después, cualquiera puede silbar en <b>Verificar</b> y verás si su silbido coincide con el tuyo.</p>
+        </div>
+        <ol class="pipeline" aria-label="Cadena de procesamiento">
+          <li><span>Micrófono</span><small>48 kHz → 16 kHz</small></li>
+          <li><span>Filtro pasa-banda</span><small>IIR / FIR</small></li>
+          <li><span>FFT · STFT</span><small>espectro y espectrograma</small></li>
+          <li><span>Wavelets</span><small>CWT y DWT</small></li>
+          <li><span>Huella</span><small>tono, ritmo, pureza</small></li>
+          <li><span>DTW</span><small>compara melodías</small></li>
+          <li><span>Decisión</span><small>¿eres tú?</small></li>
+        </ol>
+      </div>
+
+      <div class="grid two">
+        <article class="card" id="mic-card">
+          <div class="card-head">
+            <h2>Micrófono</h2>
+            <span class="pill" id="mic-status">Apagado</span>
+          </div>
+          <div class="mic-controls">
+            <button type="button" class="btn primary" id="mic-start"></button>
+            <label class="field grow">
+              <span>Entrada de audio</span>
+              <select id="mic-select" disabled><option>Activa el micrófono para ver la lista</option></select>
+            </label>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="monitor-toggle" disabled>
+            <span class="switch-ui" aria-hidden="true"></span>
+            <span>Escucharme en vivo por los audífonos</span>
+          </label>
+          <div class="meter" aria-label="Nivel de entrada">
+            <div class="meter-bar"><div class="meter-fill" id="meter-fill"></div></div>
+            <span class="meter-text" id="meter-text">— dBFS</span>
+          </div>
+          <div class="live">
+            <canvas id="live-canvas" aria-label="Espectrograma en vivo del micrófono" role="img"></canvas>
+            <div class="live-axis" aria-hidden="true"><span>8 kHz</span><span>4 kHz</span><span>0</span></div>
+          </div>
+          <p class="live-readout" id="live-readout">Frecuencia dominante: —</p>
+          <details class="explain">
+            <summary>Consejos para tus audífonos KZ por USB-C</summary>
+            <ul>
+              <li>Conéctalos <b>antes</b> de activar el micrófono. Si su cable trae micrófono, aparecerán en la lista de entradas; si no, usa el micrófono del portátil o del celular. La web funciona igual.</li>
+              <li>El monitoreo envía tu voz a la salida de audio. Úsalo solo con audífonos, porque con parlantes se acopla (pita).</li>
+              <li>Se desactivan la cancelación de eco, la supresión de ruido y la ganancia automática del navegador para analizar la señal "cruda".</li>
+            </ul>
+          </details>
+        </article>
+
+        <article class="card" id="takes-card">
+          <div class="card-head">
+            <h2>Tus 5 tomas</h2>
+            <span class="pill" id="takes-count">0/5</span>
+          </div>
+          <label class="field">
+            <span>¿De quién es este silbido?</span>
+            <input id="person-name" type="text" placeholder="Escribe tu nombre" maxlength="40" autocomplete="off">
+          </label>
+          <div class="rec-row">
+            <button type="button" class="btn record" id="rec-next"><span class="rec-dot" aria-hidden="true"></span><span class="lbl">Grabar toma 1 · 5 s</span></button>
+            <label class="btn ghost file-btn"><span class="ico"></span>Subir audio<input type="file" id="file-take" accept="audio/*" hidden></label>
+          </div>
+          <div class="rec-progress" id="rec-progress" hidden>
+            <div class="rec-count" id="rec-count">3</div>
+            <div class="rec-bar"><div class="rec-bar-fill" id="rec-bar"></div></div>
+            <button type="button" class="btn ghost sm" id="rec-cancel">Cancelar</button>
+          </div>
+          <ol class="takes" id="takes-list" aria-live="polite"></ol>
+          <div class="takes-actions">
+            <button type="button" class="btn primary" id="save-profile" disabled>Guardar perfil</button>
+            <button type="button" class="btn ghost" id="clear-takes">Borrar tomas</button>
+          </div>
+          <p class="hint">¿Sin micrófono? <button type="button" class="btn link" id="demo-fill">Llenar con silbidos de demostración</button></p>
+        </article>
+      </div>
+
+      <article class="card" id="ranking-card" hidden>
+        <div class="card-head">
+          <h2>¿Cuál es la mejor toma?</h2>
+          <span class="muted" id="ranking-note"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="ranking-table">
+            <thead><tr><th>Toma</th><th>Puntaje</th><th>SNR</th><th>Duración</th><th>Estabilidad</th><th>Pureza</th><th>Consistencia</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <details class="explain">
+          <summary>¿Cómo se calcula el puntaje?</summary>
+          <p>Cada toma recibe un puntaje de 0 a 100 que combina cinco criterios:</p>
+          <ul>
+            <li><b>SNR (25 %)</b>: relación señal/ruido dentro de la banda del filtro. SNR = 10·log<sub>10</sub>(P<sub>tono</sub>/P<sub>ruido</sub>).</li>
+            <li><b>Duración (15 %)</b>: tiempo con silbido detectado. Se penaliza si el silbido quedó cortado al inicio o al final.</li>
+            <li><b>Estabilidad (15 %)</b>: variación del tono entre tramas de 10 ms, en cents (1 semitono = 100 cents).</li>
+            <li><b>Pureza (15 %)</b>: fracción de la energía de la banda concentrada en el pico del tono.</li>
+            <li><b>Consistencia (30 %)</b>: distancia DTW promedio con tus otras tomas. La toma más parecida a las demás es la más representativa.</li>
+          </ul>
+          <p>El perfil se construye con las <b>3 mejores tomas</b>. La mejor queda como referencia principal y su audio se guarda en el perfil.</p>
+        </details>
+      </article>
+    </section>
+
+    <!-- ======================= 2 · ANÁLISIS ======================= -->
+    <section class="tab-panel" id="tab-analisis" role="tabpanel" aria-labelledby="tabbtn-analisis" hidden>
+      <div class="toolbar">
+        <div class="chips" id="source-chips" role="radiogroup" aria-label="Señal a analizar"></div>
+        <div class="toolbar-actions">
+          <button type="button" class="btn ghost sm" id="an-play-orig"><span class="ico"></span>Original</button>
+          <button type="button" class="btn ghost sm" id="an-play-filt"><span class="ico"></span>Filtrada</button>
+          <button type="button" class="btn ghost sm" id="an-wav"><span class="ico"></span>WAV</button>
+        </div>
+      </div>
+      <div class="empty-state" id="analysis-empty">
+        <p><b>Aún no hay nada que analizar.</b></p>
+        <p>Graba o sube un silbido en <a href="#grabar">Grabar</a>, o prueba un silbido en <a href="#verificar">Verificar</a>.</p>
+      </div>
+      <div id="analysis-content" hidden>
+        <p class="status-line" id="analysis-status" aria-live="polite"></p>
+        <div class="tiles" id="feature-tiles"></div>
+
+        <article class="card">
+          <div class="card-head"><h2>Señal en el tiempo</h2><div class="card-tools" id="tools-time"></div></div>
+          <div class="plot-host" id="plot-time"></div>
+          <div class="sub-head"><h3>Zoom de 20 ms</h3><span class="muted">Haz clic en la gráfica de arriba para mover el zoom</span></div>
+          <div class="plot-host" id="plot-zoom"></div>
+          <details class="explain">
+            <summary>¿Qué estoy viendo?</summary>
+            <p>En gris está la señal <b>original</b> x[n] del micrófono (16 000 muestras por segundo) y en azul la señal <b>filtrada</b> y[n] por el pasa-banda. Las franjas sombreadas son los segmentos donde se detectó silbido. En el zoom se ve la oscilación casi senoidal del silbido. El filtro elimina el zumbido de 60 Hz y el ruido grave, y el desfase entre las dos curvas es el retardo del filtro.</p>
+          </details>
+        </article>
+
+        <div class="grid two">
+          <article class="card">
+            <div class="card-head"><h2>Espectro (FFT)</h2><div class="card-tools" id="tools-spec"></div></div>
+            <div class="plot-host" id="plot-spec"></div>
+            <details class="explain">
+              <summary>¿Qué estoy viendo?</summary>
+              <p>Es la magnitud de la DFT de los 5 s completos, calculada con la FFT radix-2 (ventana de Hann y relleno con ceros hasta N = 131 072, Δf = f<sub>s</sub>/N ≈ 0,12 Hz):</p>
+              <p class="eq">X[k] = Σ<sub>n</sub> x[n]·w[n]·e<sup>−j2πkn/N</sup></p>
+              <p>La franja azul es la banda de paso del filtro. Fuera de ella, la curva filtrada cae decenas de dB, y el pico marcado es la frecuencia dominante del silbido.</p>
+            </details>
+          </article>
+          <article class="card">
+            <div class="card-head"><h2>Contorno de tono f<sub>0</sub>(t)</h2><div class="card-tools" id="tools-contour"></div></div>
+            <div class="plot-host" id="plot-contour"></div>
+            <details class="explain">
+              <summary>¿Qué estoy viendo?</summary>
+              <p>En cada trama de 64 ms (avanzando de a 10 ms) se busca el pico del espectro dentro de la banda y se refina con interpolación parabólica, δ = ½(α − γ)/(α − 2β + γ). El resultado se expresa en semitonos (escala MIDI, La4 = 440 Hz = 69). Esta curva es la "melodía" de tu silbido, y es lo que compara el DTW.</p>
+            </details>
+          </article>
+        </div>
+
+        <article class="card">
+          <div class="card-head"><h2>Espectrograma (STFT)</h2><div class="card-tools" id="tools-stft"></div></div>
+          <div class="controls-row">
+            <label class="field inline"><span>Ventana N</span>
+              <select id="stft-n"><option value="256">256 (16 ms)</option><option value="512" selected>512 (32 ms)</option><option value="1024">1024 (64 ms)</option><option value="2048">2048 (128 ms)</option></select>
+            </label>
+            <label class="field inline"><span>Solapamiento</span>
+              <select id="stft-ov"><option value="0.5">50 %</option><option value="0.75" selected>75 %</option><option value="0.875">87,5 %</option></select>
+            </label>
+            <label class="field inline"><span>Tipo</span>
+              <select id="stft-win"><option value="hann" selected>Hann</option><option value="hamming">Hamming</option><option value="blackman">Blackman</option><option value="rect">Rectangular</option></select>
+            </label>
+            <label class="check"><input type="checkbox" id="stft-contour" checked><span>Superponer f<sub>0</sub>(t)</span></label>
+          </div>
+          <div class="grid two tight">
+            <div><h3 class="plot-title">Original</h3><div class="plot-host" id="plot-stft-o"></div></div>
+            <div><h3 class="plot-title">Filtrada</h3><div class="plot-host" id="plot-stft-f"></div></div>
+          </div>
+          <p class="muted small" id="stft-info"></p>
+          <details class="explain">
+            <summary>¿Qué estoy viendo?</summary>
+            <p>La STFT calcula una FFT por cada trama enventanada: X(m,k) = Σ<sub>n</sub> x[n + mH]·w[n]·e<sup>−j2πkn/N</sup>. A diferencia de la FFT global, el espectrograma muestra <b>cuándo</b> aparece cada frecuencia. Con una ventana larga se gana resolución en frecuencia (Δf = f<sub>s</sub>/N) pero se pierde en tiempo (Δt = N/f<sub>s</sub>). Cambia N y observa el compromiso. La ventana rectangular produce más fuga espectral.</p>
+          </details>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h2>Wavelets</h2><div class="card-tools" id="tools-cwt"></div></div>
+          <div class="controls-row">
+            <div class="seg" role="radiogroup" aria-label="Señal analizada">
+              <button type="button" data-sig="y" aria-pressed="true">Filtrada</button>
+              <button type="button" data-sig="x" aria-pressed="false">Original</button>
+            </div>
+            <label class="field inline"><span>Morlet ω<sub>0</sub></span>
+              <select id="cwt-w0"><option value="6" selected>6 (clásica)</option><option value="10">10</option><option value="16">16 (más ciclos)</option></select>
+            </label>
+          </div>
+          <h3 class="plot-title">Escalograma CWT (Morlet)</h3>
+          <div class="plot-host" id="plot-cwt"></div>
+          <div class="grid dwt-grid">
+            <div>
+              <h3 class="plot-title">DWT Daubechies-4 · energía por nivel</h3>
+              <div class="bars" id="dwt-bars"></div>
+            </div>
+            <div>
+              <h3 class="plot-title">Coeficientes por sub-banda</h3>
+              <div id="dwt-plots" class="dwt-plots"></div>
+            </div>
+          </div>
+          <details class="explain">
+            <summary>¿Qué estoy viendo?</summary>
+            <p><b>CWT</b>: W(a,b) = ∫ x(t)·(1/√a)·ψ*((t − b)/a) dt con la wavelet de Morlet. Cada fila corresponde a una escala a = ω<sub>0</sub>/(2πf). En frecuencias altas la wavelet es corta (buena resolución temporal) y en frecuencias bajas es larga (buena resolución frecuencial). Ese es el <b>análisis multirresolución</b>, por eso el eje de frecuencia es logarítmico.</p>
+            <p><b>DWT</b>: es un banco de filtros. En cada nivel la señal pasa por un pasa-bajos h[n] y un pasa-altos g[n] y se diezma ×2, así: x → (A1, D1), A1 → (A2, D2)… Con f<sub>s</sub> = 16 kHz, D1 cubre 4–8 kHz, D2 2–4 kHz, D3 1–2 kHz, etc. Las barras muestran en qué octava vive la energía. El silbido suele caer en D2 o D3, y el zumbido de 60 Hz en A5.</p>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <!-- ======================= 3 · FILTRO ======================= -->
+    <section class="tab-panel" id="tab-filtro" role="tabpanel" aria-labelledby="tabbtn-filtro" hidden>
+      <div class="grid filter-layout">
+        <article class="card" id="filter-controls">
+          <div class="card-head"><h2>Diseño del filtro pasa-banda</h2></div>
+          <div class="seg wide" role="radiogroup" aria-label="Filtro activo" id="filter-type">
+            <button type="button" data-type="iir" aria-pressed="true">IIR Butterworth</button>
+            <button type="button" data-type="fir" aria-pressed="false">FIR por ventanas</button>
+          </div>
+          <p class="muted small">El filtro activo es el que usan el análisis, la huella y la verificación.</p>
+          <label class="field">
+            <span>Frecuencia de corte inferior f<sub>L</sub>: <b id="fl-val"></b></span>
+            <input type="range" id="fl" min="200" max="3000" step="50">
+          </label>
+          <label class="field">
+            <span>Frecuencia de corte superior f<sub>H</sub>: <b id="fh-val"></b></span>
+            <input type="range" id="fh" min="1500" max="7500" step="50">
+          </label>
+          <div class="grid two tight">
+            <label class="field"><span>Orden IIR (pasa-banda)</span>
+              <select id="iir-order"><option value="2">4 (2 biquads)</option><option value="3">6 (3 biquads)</option><option value="4">8 (4 biquads)</option><option value="5">10 (5 biquads)</option><option value="6">12 (6 biquads)</option></select>
+            </label>
+            <label class="field"><span>Ventana FIR</span>
+              <select id="fir-win"><option value="hamming">Hamming</option><option value="hann">Hann</option><option value="blackman">Blackman</option><option value="rect">Rectangular (Gibbs)</option></select>
+            </label>
+          </div>
+          <label class="field">
+            <span>Coeficientes FIR M: <b id="taps-val"></b></span>
+            <input type="range" id="fir-taps" min="21" max="255" step="2">
+          </label>
+          <div class="filter-summary" id="filter-summary"></div>
+          <div class="btn-row">
+            <button type="button" class="btn primary" id="export-h"><span class="ico"></span>Exportar para ESP32 (.h)</button>
+            <button type="button" class="btn ghost" id="copy-coefs"><span class="ico"></span>Copiar coeficientes</button>
+            <button type="button" class="btn link" id="filter-reset">Restablecer</button>
+          </div>
+        </article>
+        <article class="card">
+          <div class="card-head"><h2>Respuesta en magnitud |H(e<sup>jω</sup>)|</h2><div class="card-tools" id="tools-mag"></div></div>
+          <div class="plot-host" id="plot-mag"></div>
+          <details class="explain">
+            <summary>¿Qué estoy viendo?</summary>
+            <p><b>IIR Butterworth</b>: el prototipo pasa-bajos analógico (máximamente plano) se transforma en pasa-banda con s → (s² + Ω<sub>0</sub>²)/(B·s) y luego pasa a digital con la transformación bilineal s = 2f<sub>s</sub>·(1 − z<sup>−1</sup>)/(1 + z<sup>−1</sup>), con pre-distorsión Ω = 2f<sub>s</sub>·tan(ω/2). En f<sub>L</sub> y f<sub>H</sub> la ganancia es exactamente −3 dB.</p>
+            <p><b>FIR</b>: es la respuesta ideal h<sub>d</sub>[n] = [sin(ω<sub>H</sub>n) − sin(ω<sub>L</sub>n)]/(πn) truncada a M coeficientes y multiplicada por una ventana. Truncar con la ventana rectangular produce el <b>fenómeno de Gibbs</b> (rizado), y las ventanas suaves lo reducen a cambio de una transición más ancha.</p>
+          </details>
+        </article>
+      </div>
+      <div class="grid two">
+        <article class="card">
+          <div class="card-head"><h2>Retardo de grupo τ(ω)</h2><div class="card-tools" id="tools-gd"></div></div>
+          <div class="plot-host" id="plot-gd"></div>
+          <p class="muted small">τ(ω) = −dφ/dω, mostrado solo en la banda de paso. El FIR tiene fase lineal, con retardo constante de (M−1)/2 muestras. El IIR tiene fase no lineal, por eso su retardo varía con la frecuencia.</p>
+        </article>
+        <article class="card">
+          <div class="card-head"><h2>Respuesta al impulso h[n]</h2><div class="card-tools" id="tools-imp"></div></div>
+          <div class="plot-host" id="plot-imp"></div>
+          <p class="muted small">El FIR termina después de M muestras (memoria finita). El IIR depende de sus salidas pasadas (realimentación), así que su respuesta decae pero nunca termina del todo.</p>
+        </article>
+      </div>
+      <div class="grid two">
+        <article class="card">
+          <div class="card-head"><h2>Polos y ceros · IIR</h2><div class="card-tools" id="tools-pz-iir"></div></div>
+          <div class="plot-host" id="plot-pz-iir"></div>
+          <p class="muted small" id="pz-iir-info"></p>
+        </article>
+        <article class="card">
+          <div class="card-head"><h2>Polos y ceros · FIR</h2><div class="card-tools" id="tools-pz-fir"></div></div>
+          <div class="plot-host" id="plot-pz-fir"></div>
+          <p class="muted small" id="pz-fir-info"></p>
+        </article>
+      </div>
+      <article class="card">
+        <div class="card-head"><h2>Coeficientes y ecuación en diferencias</h2></div>
+        <div id="coef-view"></div>
+      </article>
+    </section>
+
+    <!-- ======================= 4 · PERFILES ======================= -->
+    <section class="tab-panel" id="tab-perfiles" role="tabpanel" aria-labelledby="tabbtn-perfiles" hidden>
+      <div class="section-head">
+        <div>
+          <h1>Perfiles guardados</h1>
+          <p class="muted">Cada perfil es la huella de un silbido. Se guardan solo en este navegador. Exporta el archivo <code>.json</code> para compartirlo o llevarlo a otro equipo.</p>
+        </div>
+        <div class="btn-row">
+          <label class="btn ghost file-btn"><span class="ico"></span>Importar perfil<input type="file" id="import-profile" accept=".json,application/json" multiple hidden></label>
+          <button type="button" class="btn ghost" id="demo-profiles">Crear perfiles demo</button>
+        </div>
+      </div>
+      <div class="profiles" id="profiles-grid"></div>
+      <div class="empty-state" id="profiles-empty">
+        <p><b>Todavía no hay perfiles.</b></p>
+        <p>Graba tus 5 tomas en <a href="#grabar">Grabar</a> y pulsa <b>Guardar perfil</b>. También puedes crear los perfiles de demostración (Ana y Beto) para explorar la web.</p>
+      </div>
+    </section>
+
+    <!-- ======================= 5 · VERIFICAR ======================= -->
+    <section class="tab-panel" id="tab-verificar" role="tabpanel" aria-labelledby="tabbtn-verificar" hidden>
+      <div class="grid verify-top">
+        <article class="card">
+          <div class="card-head"><h2>¿Quién silba?</h2></div>
+          <label class="field">
+            <span>Comparar con</span>
+            <select id="verify-profile"></select>
+          </label>
+          <label class="field">
+            <span>Rigurosidad</span>
+            <select id="verify-strict">
+              <option value="1.3">Permisiva (umbral T = 1,3)</option>
+              <option value="1" selected>Normal (umbral T = 1,0)</option>
+              <option value="0.8">Estricta (umbral T = 0,8)</option>
+            </select>
+          </label>
+          <div class="rec-row">
+            <button type="button" class="btn record" id="verify-rec"><span class="rec-dot" aria-hidden="true"></span><span class="lbl">Silbar ahora · 5 s</span></button>
+            <label class="btn ghost file-btn"><span class="ico"></span>Subir audio<input type="file" id="verify-file" accept="audio/*" hidden></label>
+          </div>
+          <div class="rec-progress" id="verify-progress" hidden>
+            <div class="rec-count" id="verify-count">3</div>
+            <div class="rec-bar"><div class="rec-bar-fill" id="verify-bar"></div></div>
+            <button type="button" class="btn ghost sm" id="verify-cancel">Cancelar</button>
+          </div>
+          <p class="hint">Demo sin micrófono:
+            <button type="button" class="btn link" id="demo-ana">silbido de Ana</button> ·
+            <button type="button" class="btn link" id="demo-beto">silbido de Beto</button> ·
+            <button type="button" class="btn link" id="demo-imit">imitador de Ana</button>
+          </p>
+        </article>
+        <article class="card verdict" id="verdict" aria-live="polite"></article>
+      </div>
+
+      <div id="verify-details" hidden>
+        <div class="grid two">
+          <article class="card">
+            <div class="card-head"><h2>¿Por qué? · Componentes de la distancia</h2></div>
+            <div class="bars comp" id="comp-bars"></div>
+            <details class="explain">
+              <summary>¿Cómo se decide?</summary>
+              <p>Cada característica se mide en <b>unidades de tolerancia</b> τ, que salen de la variabilidad entre tus propias tomas. Una razón d/τ ≤ 1 es normal para ti.</p>
+              <p class="eq">D = √( Σ wᵢ·(dᵢ/τᵢ)² / Σ wᵢ ) · se acepta si D ≤ T</p>
+              <p>Los pesos son 3 para la melodía (DTW), 2 para el tono medio y 1 para la duración, los segmentos y la pureza. La similitud mostrada es 100·2<sup>−(D/T)²</sup>, que vale 50 % justo en el umbral.</p>
+            </details>
+          </article>
+          <article class="card">
+            <div class="card-head"><h2>Identificación · todos los perfiles</h2></div>
+            <div class="bars ident" id="ident-bars"></div>
+            <p class="muted small">Compara la prueba con cada perfil guardado (identificación 1:N). El más cercano es el candidato.</p>
+          </article>
+        </div>
+        <div class="grid two">
+          <article class="card">
+            <div class="card-head">
+              <h2>Contornos de tono</h2>
+              <div class="seg sm" role="radiogroup" aria-label="Alineación" id="contour-mode">
+                <button type="button" data-mode="raw" aria-pressed="true">Sin alinear</button>
+                <button type="button" data-mode="dtw" aria-pressed="false">Alineados con DTW</button>
+              </div>
+            </div>
+            <div class="plot-host" id="plot-vcontour"></div>
+          </article>
+          <article class="card">
+            <div class="card-head"><h2>Matriz DTW</h2><div class="card-tools" id="tools-dtw"></div></div>
+            <div class="plot-host" id="plot-dtw"></div>
+            <p class="muted small">Cada celda es |prueba<sub>i</sub> − referencia<sub>j</sub>| en semitonos. La línea naranja es el camino de costo mínimo que encuentra el DTW. Si los silbidos son iguales, el camino sigue la diagonal por un "valle" claro.</p>
+          </article>
+        </div>
+        <div class="grid two">
+          <article class="card">
+            <div class="card-head"><h2>Referencia del perfil</h2><button type="button" class="btn ghost sm" id="play-ref"><span class="ico"></span>Escuchar</button></div>
+            <div class="plot-host" id="plot-vref"></div>
+          </article>
+          <article class="card">
+            <div class="card-head"><h2>Silbido de prueba</h2><button type="button" class="btn ghost sm" id="play-query"><span class="ico"></span>Escuchar</button></div>
+            <div class="plot-host" id="plot-vquery"></div>
+          </article>
+        </div>
+        <p class="center"><button type="button" class="btn ghost" id="query-analyze">Ver el análisis completo del silbido de prueba</button></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p><b>Silbido ID</b> · Proyecto de Procesamiento de Señales II. Todo el procesamiento ocurre en tu navegador: el audio no se envía a ningún servidor.</p>
+    <p class="muted small">Es una demostración académica, no un sistema de seguridad. Alguien que imite bien tu melodía y tu tono podría ser aceptado. Próximo paso: el mismo filtro y la misma detección en un ESP32 con micrófono INMP441 para encender un LED.</p>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
