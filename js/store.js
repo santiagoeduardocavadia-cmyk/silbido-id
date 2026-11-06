@@ -39,9 +39,21 @@ export function isValidProfile(p) {
   );
 }
 
+/** Completa campos que falten (p. ej. perfiles exportados con otra configuración de filtro). */
+export function normalizeProfile(p) {
+  const f = { ...DEFAULT_FILTER, ...p.filter };
+  if (!(f.fl > 0 && f.fh > f.fl && f.fh < 8000)) Object.assign(f, { fl: DEFAULT_FILTER.fl, fh: DEFAULT_FILTER.fh });
+  if (![2, 3, 4, 5, 6].includes(f.order)) f.order = DEFAULT_FILTER.order;
+  if (!(f.taps >= 21 && f.taps <= 255)) f.taps = DEFAULT_FILTER.taps;
+  f.taps |= 1;
+  if (f.type !== 'fir') f.type = 'iir';
+  p.filter = f;
+  return p;
+}
+
 export function loadProfiles() {
   const list = read(KEY_PROFILES, []);
-  return Array.isArray(list) ? list.filter(isValidProfile) : [];
+  return Array.isArray(list) ? list.filter(isValidProfile).map(normalizeProfile) : [];
 }
 
 export function saveProfiles(list) {

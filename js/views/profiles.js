@@ -2,7 +2,7 @@
 import { buildProfile } from '../dsp/matcher.js';
 import { analyzeSignal, noteName } from '../dsp/features.js';
 import { synthWhistle, DEMO_PEOPLE } from '../dsp/synth.js';
-import { isValidProfile, DEFAULT_FILTER } from '../store.js';
+import { isValidProfile, normalizeProfile, DEFAULT_FILTER } from '../store.js';
 import { designFilter } from '../dsp/filters.js';
 import { $, fmt, icons, escapeHtml, download, slug, formatDate, floatToB64 } from '../util.js';
 import { drawContourSpark } from './common.js';
@@ -107,6 +107,8 @@ export function initProfiles(app) {
             bad++;
             continue;
           }
+          normalizeProfile(p);
+          if (!p.id) p.id = `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
           const i = app.state.profiles.findIndex((x) => x.id === p.id);
           if (i >= 0) app.state.profiles[i] = p;
           else app.state.profiles.push(p);
@@ -117,7 +119,8 @@ export function initProfiles(app) {
       }
     }
     if (ok) app.saveProfiles();
-    app.toast(ok ? `Se importaron ${ok} perfil${ok === 1 ? '' : 'es'}.${bad ? ` ${bad} archivo(s) no eran perfiles válidos.` : ''}` : 'El archivo no es un perfil válido de Silbido ID.', ok ? '' : 'error');
+    const msg = ok === 1 ? 'Se importó 1 perfil.' : `Se importaron ${ok} perfiles.`;
+    app.toast(ok ? `${msg}${bad ? ` ${bad} archivo(s) no eran perfiles válidos.` : ''}` : 'El archivo no es un perfil válido de Silbido ID.', ok ? '' : 'error');
   });
 
   el.demo.addEventListener('click', async () => {
