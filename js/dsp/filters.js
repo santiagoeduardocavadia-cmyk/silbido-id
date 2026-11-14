@@ -345,6 +345,9 @@ export function toCHeader(design) {
   lines.push('// ===========================================================');
   lines.push('#pragma once');
   lines.push(`#define SILBIDO_FS ${design.fs}`);
+  lines.push(`#define SILBIDO_FL ${f(design.fl)}`);
+  lines.push(`#define SILBIDO_FH ${f(design.fh)}`);
+  lines.push(`#define SILBIDO_FILTRO "${design.name.replace(/"/g, '')} · ${Math.round(design.fl)}-${Math.round(design.fh)} Hz"`);
   if (design.kind === 'iir') {
     const n = design.sos.length;
     lines.push(`#define SILBIDO_NUM_SECCIONES ${n}`);

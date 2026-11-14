@@ -14,9 +14,9 @@ Proyecto del reto del silbido de **Procesamiento de Señales II**. Todo el proce
 |---|---|
 | **1 · Grabar** | Eliges el micrófono (por ejemplo, audífonos USB-C), te escuchas en vivo, ves el espectrograma en tiempo real y grabas **5 tomas de 5 s**. La web puntúa cada toma y elige **la mejor**. |
 | **2 · Análisis** | Para cualquier toma: señal original vs. filtrada, zoom de 20 ms, **espectro FFT**, **contorno de tono f₀(t)**, **espectrograma STFT** (ventana y solapamiento ajustables), **escalograma CWT (Morlet)** y **DWT Daubechies-4** con la energía por sub-banda. |
-| **3 · Filtro** | Diseño del pasa-banda: **IIR Butterworth** (transformación bilineal) o **FIR por ventanas** (Hamming, Hann, Blackman, rectangular/Gibbs). Respuesta en magnitud, retardo de grupo, respuesta al impulso, **polos y ceros** y exportación a **C para el ESP32**. |
-| **4 · Perfiles** | Cada persona guarda su huella. Se puede **exportar/importar en `.json`** para compartirla. Incluye perfiles de demostración. |
-| **5 · Verificar** | Alguien silba 5 s y la web decide: **verificación 1:1** ("¿es Ana?") o **identificación 1:N** ("¿quién silbó?"). Muestra la similitud, por qué decidió así, los contornos superpuestos, la **matriz DTW** y los espectrogramas lado a lado. |
+| **3 · Filtro** | **Auto-sintonía**: el sistema escucha tus tomas, mide en qué rango silbas y cómo es el ruido, prueba 51 filtros (**IIR Butterworth** de orden 4–12 y **FIR por ventanas** de 61–201 coeficientes) y deja fijo el mejor. No hay controles manuales, para no cortar el rango del silbido. Muestra la final IIR contra FIR, la respuesta en magnitud, el retardo de grupo, la respuesta al impulso, los **polos y ceros** y la exportación a **C para el ESP32**. |
+| **4 · Perfiles** | Cada persona guarda su huella. **Nuevo perfil desde audios**: subes (o arrastras) de 3 a 5 silbidos y la web los analiza, elige el filtro y crea el perfil; un audio largo se parte en tomas de 5 s. Se puede **exportar/importar en `.json`** y **exportar para el ESP32**. Incluye perfiles de demostración. |
+| **5 · Verificar** | Alguien silba y la web decide, en **verificación 1:1** ("¿es Ana?") o **identificación 1:N** ("¿quién silbó?"), con **dos modos**: **por filtros** (reglas fijas sobre la huella, D ≤ T) o **por inteligencia** (red neuronal propia), o **ambos** (solo acepta si coinciden). Tiene **identificación en tiempo real** mientras silbas y un botón **"Ver cómo lo identificó, paso a paso"** que recorre cada etapa con los números reales. |
 
 ¿No tienes micrófono? Usa los botones de **demostración**, que generan silbidos sintéticos de "Ana", "Beto" y un "imitador".
 
@@ -48,13 +48,28 @@ Similitud = 100 · 2^(−(D/T)²)       →  50 % justo en el umbral
 
 Los pesos son 3 para la forma de la melodía (DTW), 2 para el tono medio y 1 para la duración, los segmentos y la pureza tonal.
 
+### Modo por inteligencia
+
+Una red neuronal pequeña (perceptrón multicapa **22 → 24 → K+1**, tanh y softmax) programada a mano en `js/dsp/ai.js`, sin librerías:
+
+- **Entrada**: 22 números por silbido: tono medio, rango, duración, segmentos, pureza, estabilidad y la forma de la melodía (contorno f₀ menos su mediana, re-muestreado a 16 puntos).
+- **Salida**: una probabilidad por perfil y otra para **"desconocido"**. Se acepta si supera el 50, 60 o 75 % según la rigurosidad.
+- **Entrenamiento** en el navegador, cada vez que cambian los perfiles (menos de 1 s): las tomas de referencia con variaciones realistas como positivos, e imitadores con otro tono, melodías cambiadas y silbidos al azar como "desconocido". Usa Adam, entropía cruzada con pesos por clase y semilla fija.
+- **Explicación**: se "tapa" cada grupo de datos y se mide cuánto cambia la confianza de la red. Así se ve qué pesó más (melodía, tono…).
+
+### Tiempo real
+
+El micrófono alimenta un anillo de 5 s (re-muestreado a 16 kHz en el navegador). Cada 0,6 s, un filtro ancho localiza la última **frase** silbada (tramos separados por menos de 0,7 s), la recorta y la compara con los dos modos. Mientras sigues silbando, el resultado es provisional. Al terminar, se fija y se mantiene hasta el siguiente silbido.
+
 ## Ejecutar en tu computador
 
 Necesitas [Node.js](https://nodejs.org/) (no hay dependencias que instalar):
 
 ```bash
 npm start          # abre http://localhost:8000
-npm test           # 48 pruebas del núcleo DSP
+npm test           # 85 pruebas: núcleo DSP, auto-sintonía, inteligencia, audios largos, USB y exportación al ESP32
+npm run esp32:filtro  # regenera esp32/silbido_id/filtro.h (pre-filtro) o: node scripts/esp32-filtro.mjs perfil.json
+npm run esp32      # perfiles del reconocedor autónomo: node scripts/esp32-perfiles.mjs perfil.json
 ```
 
 > Los módulos ES y el micrófono necesitan `http://localhost` o `https://`. Abrir `index.html` con doble clic (`file://`) no funciona.
@@ -71,6 +86,14 @@ js/dsp/               núcleo de señales (sin dependencias, también corre en N
   wavelet.js          CWT Morlet y DWT db4
   features.js         seguimiento de tono, detección de actividad, características
   matcher.js          DTW, puntaje de tomas, perfil y verificación
+  autofilter.js       auto-sintonía: elige el filtro (IIR o FIR y su banda) a partir de las tomas
+  ai.js               inteligencia: red neuronal propia, entrenamiento, predicción y explicación
+js/esp32.js           genera perfil.h y prueba_audio.h para el reconocedor autónomo
+js/esp32-serial.js    la ESP32 como micrófono por USB (Web Serial, lector de tramas)
+esp32/silbido_id/     firmware principal: filtra el INMP441 y manda el audio por USB
+esp32/reconocedor_autonomo/  firmware que reconoce dentro de la ESP32
+docs/informe-tecnico.md      informe técnico completo
+hardware/             circuito: esquemático, vista 3D, conexiones y montaje
   synth.js            silbidos sintéticos para la demostración
 js/audio.js           micrófono (getUserMedia + AudioWorklet), re-muestreo, archivos, reproducción
 js/ui/                gráficas en canvas y vista en vivo
@@ -80,7 +103,18 @@ tests/dsp.test.mjs    pruebas: FFT vs DFT, Butterworth vs fórmula analógica, P
 
 ## Próximo paso: ESP32 + INMP441
 
-En la pestaña **Filtro**, el botón **Exportar para ESP32 (.h)** genera los coeficientes del filtro activo y una función `silbido_filtrar(x)` lista para el sketch. Con el micrófono I2S INMP441 a 16 kHz se puede repetir la misma cadena (filtro → energía y tono en la banda → comparación) para encender un LED o un relé cuando se reconozca el silbido.
+🔌 **Circuito completo** (esquemático, vista 3D, conexiones, materiales y montaje): [`hardware/index.html`](hardware/index.html), o en la web publicada: `/hardware/`.
+
+🎛️ **Firmware**: [`esp32/`](esp32/README.md). La ESP32 **filtra** la señal del INMP441 (bloqueo de DC → pasa-banda Butterworth/FIR → ganancia con limitador suave) y la manda por USB. En la web, **Grabar → Usar ESP32 (USB)** la usa como micrófono. También hay un reconocedor autónomo que decide dentro de la placa.
+
+📘 **Informe técnico completo** (hardware, I2S, teoría de los filtros, auto-sintonía, DTW, red neuronal): [`docs/informe-tecnico.md`](docs/informe-tecnico.md).
+
+### Auto-sintonía del filtro
+
+1. **Sondeo**: cada toma pasa por un pre-filtro ancho (400–7000 Hz). De las tramas con silbido sale tu rango (percentiles 3–97 de f₀) y de las tramas sin silbido sale el espectro del ruido.
+2. **Candidatos**: con 2,5, 4 y 6 semitonos de holgura alrededor del rango se diseñan 15 IIR y 36 FIR.
+3. **Puntaje analítico** con la respuesta en frecuencia real: SNR estimada a la salida, pérdida y rizado sobre tus notas, caída en los bordes del rango (penalizada fuerte), dispersión del retardo de grupo, estabilidad en float32 y costo en el ESP32.
+4. **Final IIR contra FIR**: el mejor de cada familia analiza de verdad las tomas y gana el de mejor calidad (el mismo puntaje que elige la mejor toma). El empate lo decide el puntaje analítico.
 
 ## Limitaciones
 

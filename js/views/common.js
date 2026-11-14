@@ -1,7 +1,9 @@
 // Configuraciones y dibujos compartidos entre vistas.
 import { fmt, fmtFreqTick, fmtHz, sleep } from '../util.js';
 import { noteName, midiToHz } from '../dsp/features.js';
-import { tok } from '../ui/plot.js';
+import { stft, dbRange } from '../dsp/stft.js';
+import { buildAnnotations } from '../ui/annotate.js';
+import { tok, heatLUT } from '../ui/plot.js';
 
 export const timeAxis = (max = 5, label = 'Tiempo (s)') => ({ label, min: 0, max, tip: (v) => `${fmt(v, 3)} s` });
 
@@ -103,6 +105,101 @@ export function drawContourSpark(canvas, { times, midi, dur, segments = [] }) {
     } else ctx.lineTo(x, y);
   }
   ctx.stroke();
+}
+
+const thumbCache = new WeakMap();
+const THUMB_F0 = 400;
+const THUMB_F1 = 5200;
+
+function thumbSpec(a) {
+  let S = thumbCache.get(a);
+  if (!S) {
+    const full = stft(a.y, a.fs, { N: 512, overlap: 0.5, fmax: THUMB_F1 });
+    const range = dbRange(full.data, 48);
+    const r0 = Math.floor(THUMB_F0 / full.df);
+    const rows = full.rows - r0;
+    const lut = heatLUT();
+    const off = document.createElement('canvas');
+    off.width = full.cols;
+    off.height = rows;
+    const octx = off.getContext('2d');
+    const img = octx.createImageData(full.cols, rows);
+    const scale = 255 / (range.vmax - range.vmin || 1);
+    for (let c = 0; c < full.cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        let v = (full.data[c * full.rows + r0 + r] - range.vmin) * scale;
+        v = v < 0 ? 0 : v > 255 ? 255 : v | 0;
+        const o = ((rows - 1 - r) * full.cols + c) * 4;
+        img.data[o] = lut[v * 3];
+        img.data[o + 1] = lut[v * 3 + 1];
+        img.data[o + 2] = lut[v * 3 + 2];
+        img.data[o + 3] = 255;
+      }
+    }
+    octx.putImageData(img, 0, 0);
+    S = { off, x0: full.x0, x1: full.x1, fLo: r0 * full.df, fHi: (full.rows - 0.5) * full.df };
+    thumbCache.set(a, S);
+  }
+  return S;
+}
+
+/**
+ * Miniatura: mapa de calor de la toma con los tramos detectados (recuadros) y el contorno f₀(t).
+ * Es la versión pequeña del mapa anotado de Análisis.
+ */
+export function drawHeatThumb(canvas, a, { crop = false } = {}) {
+  const { ctx, w, h } = setupCanvas(canvas);
+  const S = thumbSpec(a);
+  // con `crop` se acerca al tramo con silbido (útil en tarjetas anchas y bajas)
+  const f = a.features;
+  const t0 = crop && f.valid ? Math.max(0, f.start - 0.2) : 0;
+  const t1 = crop && f.valid ? Math.min(a.duration, f.end + 0.2) : a.duration;
+  const X = (t) => ((t - t0) / (t1 - t0)) * w;
+  const Y = (f) => h - ((f - S.fLo) / (S.fHi - S.fLo)) * h;
+  ctx.fillStyle = tok('--heat-0');
+  ctx.fillRect(0, 0, w, h);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(S.off, X(S.x0), 0, X(S.x1) - X(S.x0), h);
+  if (!a.features.valid) return;
+  const c = tok('--ann-f0');
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 1;
+  for (const b of buildAnnotations(a, { compact: true }).layers.boxes) {
+    if (b.key !== 'seg') continue;
+    // dentro del lienzo (1,5 px de margen) para que el contorno no quede cortado en los bordes
+    const top = Math.max(1.5, Y(b.y1));
+    const bottom = Math.min(h - 1.5, Y(b.y0));
+    const left = Math.max(1.5, X(b.x0));
+    const right = Math.min(w - 1.5, X(b.x1));
+    ctx.beginPath();
+    ctx.roundRect(left, top, Math.max(2, right - left), Math.max(4, bottom - top), 3);
+    ctx.stroke();
+  }
+  const trace = (color, width) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    let pen = false;
+    for (let i = 0; i < a.midi.length; i++) {
+      const m = a.midi[i];
+      if (!Number.isFinite(m)) {
+        pen = false;
+        continue;
+      }
+      const x = X(a.frames.times[i]);
+      const y = Y(midiToHz(m));
+      if (!pen) {
+        ctx.moveTo(x, y);
+        pen = true;
+      } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  };
+  trace('rgba(6,4,16,0.85)', 3.4);
+  trace(c, 1.7);
 }
 
 /** Miniatura: envolvente de la forma de onda (para tomas sin silbido detectado). */

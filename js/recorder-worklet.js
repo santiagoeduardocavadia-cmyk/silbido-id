@@ -43,3 +43,53 @@ class RecorderProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('recorder-processor', RecorderProcessor);
+
+// Reproduce dentro del grafo de audio un flujo externo a otra frecuencia (la ESP32 manda 16 kHz),
+// para que el espectrograma en vivo, el medidor y el monitoreo funcionen igual que con un micrófono.
+class StreamPlayer extends AudioWorkletProcessor {
+  constructor(opts) {
+    super();
+    this.step = (opts.processorOptions.inRate || 16000) / sampleRate;
+    this.ring = new Float32Array(16384);
+    this.w = 0;
+    this.r = 0;
+    this.n = 0;
+    this.frac = 0;
+    this.port.onmessage = (e) => {
+      const x = e.data;
+      for (let i = 0; i < x.length; i++) {
+        this.ring[this.w] = x[i];
+        this.w = (this.w + 1) & 16383;
+        if (this.n < 16384) this.n++;
+        else this.r = (this.r + 1) & 16383;
+      }
+      // si se acumula más de ~150 ms de retraso, se descarta lo viejo
+      while (this.n > 2400) {
+        this.r = (this.r + 1) & 16383;
+        this.n--;
+      }
+    };
+  }
+
+  process(_inputs, outputs) {
+    const out = outputs[0][0];
+    for (let i = 0; i < out.length; i++) {
+      if (this.n < 2) {
+        out[i] = 0;
+        continue;
+      }
+      const a = this.ring[this.r];
+      const b = this.ring[(this.r + 1) & 16383];
+      out[i] = a + (b - a) * this.frac;
+      this.frac += this.step;
+      while (this.frac >= 1 && this.n >= 2) {
+        this.frac -= 1;
+        this.r = (this.r + 1) & 16383;
+        this.n--;
+      }
+    }
+    return true;
+  }
+}
+
+registerProcessor('stream-player', StreamPlayer);

@@ -1,21 +1,43 @@
 /**
  * Vista en vivo del micrófono: nivel (dBFS), frecuencia dominante y espectrograma que se desplaza.
+ * Sobre el mapa se dibuja la banda del filtro y una marca con el pico que sigue el sistema.
  */
 import { heatLUT, tok } from './plot.js';
 import { fmt } from '../util.js';
 import { noteName, hzToMidi } from '../dsp/features.js';
 
 export class LiveView {
-  constructor({ canvas, meterFill, meterText, readout }) {
+  constructor({ canvas, meterFill, meterText, readout, band, bandLabel, peak, peakLabel, idle }) {
     this.canvas = canvas;
     this.meterFill = meterFill;
     this.meterText = meterText;
     this.readout = readout;
+    this.band = band;
+    this.bandLabel = bandLabel;
+    this.peak = peak;
+    this.peakLabel = peakLabel;
+    this.idle = idle;
     this.analyser = null;
     this.raf = 0;
     this.fmax = 8000;
     this.peakHold = -100;
     this.lastCol = 0;
+    this.resetReadout();
+  }
+
+  resetReadout() {
+    this.readout.innerHTML = 'Frecuencia dominante <b>—</b>';
+  }
+
+  /** Dibuja la banda de paso del filtro sobre el espectrograma. */
+  setBand(fl, fh) {
+    if (!this.band) return;
+    const top = (1 - Math.min(fh, this.fmax) / this.fmax) * 100;
+    const h = ((Math.min(fh, this.fmax) - fl) / this.fmax) * 100;
+    this.band.style.top = `${top}%`;
+    this.band.style.height = `${h}%`;
+    const k = (v) => (v >= 1000 ? `${fmt(v / 1000, v % 1000 ? 1 : 0)} kHz` : `${fmt(v, 0)} Hz`);
+    this.bandLabel.textContent = `Banda del filtro · ${k(fl)} a ${k(fh)}`;
   }
 
   attach(analyser) {
@@ -23,6 +45,7 @@ export class LiveView {
     this.freq = new Float32Array(analyser.frequencyBinCount);
     this.time = new Float32Array(analyser.fftSize);
     this.clear();
+    if (this.idle) this.idle.hidden = true;
     if (!this.raf) this.loop();
   }
 
@@ -32,7 +55,10 @@ export class LiveView {
     this.raf = 0;
     this.meterFill.style.width = '0%';
     this.meterText.textContent = '— dBFS';
-    this.readout.textContent = 'Frecuencia dominante: —';
+    this.resetReadout();
+    if (this.peak) this.peak.classList.remove('on');
+    if (this.idle) this.idle.hidden = false;
+    this.clear();
   }
 
   clear() {
@@ -87,8 +113,16 @@ export class LiveView {
     }
     if (best > -75 && db > -60) {
       const f = kb * binHz;
-      this.readout.innerHTML = `Frecuencia dominante: <b>${fmt(f, 0)} Hz</b> <span class="muted">(${noteName(hzToMidi(f))})</span>`;
-    } else this.readout.innerHTML = 'Frecuencia dominante: <span class="muted">silencio</span>';
+      this.readout.innerHTML = `Frecuencia dominante <b>${fmt(f, 0)} Hz</b> <span class="muted">${noteName(hzToMidi(f))}</span>`;
+      if (this.peak) {
+        this.peak.style.top = `${(1 - Math.min(f, this.fmax) / this.fmax) * 100}%`;
+        this.peakLabel.textContent = `${fmt(f, 0)} Hz · ${noteName(hzToMidi(f))}`;
+        this.peak.classList.add('on');
+      }
+    } else {
+      this.readout.innerHTML = 'Frecuencia dominante <b>—</b> <span class="muted">silencio</span>';
+      if (this.peak) this.peak.classList.remove('on');
+    }
 
     // desplazar y pintar una columna nueva
     const ctx = c.getContext('2d');

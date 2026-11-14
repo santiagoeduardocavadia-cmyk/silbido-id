@@ -5,8 +5,15 @@ import { designFilter } from './dsp/filters.js';
 import { analyzeSignal } from './dsp/features.js';
 import { rankTakes } from './dsp/matcher.js';
 import { AudioEngine } from './audio.js';
-import { loadFilter, saveFilter, loadProfiles, saveProfiles, loadTheme, saveTheme } from './store.js';
-import { themeChanged } from './ui/plot.js';
+import { DEFAULT_FILTER, loadProfiles, saveProfiles, loadTheme, saveTheme } from './store.js';
+import { autoTuneFilter } from './dsp/autofilter.js';
+import { trainModel, modelKey } from './dsp/ai.js';
+import { themeChanged, Plot } from './ui/plot.js';
+import { enhanceControls } from './ui/controls.js';
+import { stft, dbRange } from './dsp/stft.js';
+import { synthWhistle, DEMO_PEOPLE } from './dsp/synth.js';
+import { buildAnnotations } from './ui/annotate.js';
+import { timeAxis, freqAxis } from './views/common.js';
 import { Emitter, $, $$, icons, b64ToFloat } from './util.js';
 import { initRecord } from './views/record.js';
 import { initAnalysis } from './views/analysis.js';
@@ -36,7 +43,9 @@ const app = {
   bus: new Emitter(),
   audio: new AudioEngine(),
   state: {
-    filter: loadFilter(),
+    // El filtro no se ajusta a mano: lo elige la auto-sintonía a partir de las tomas.
+    filter: { ...DEFAULT_FILTER },
+    auto: null,
     takes: new Array(NTAKES).fill(null),
     rank: null,
     profiles: loadProfiles(),
@@ -105,17 +114,48 @@ const app = {
     return out;
   },
 
-  recomputeRanking() {
-    const analyses = app.state.takes.map((t) => (t ? app.analyze(t) : null));
-    app.state.rank = analyses.some(Boolean) ? rankTakes(analyses) : null;
+  /** Auto-sintonía: vuelve a elegir el filtro con las tomas actuales. */
+  retune() {
+    const items = app.state.takes.filter(Boolean);
+    const prevKey = designKey(app.state.filter);
+    const res = autoTuneFilter(
+      items.map((t) => t.samples),
+      FS,
+      DEFAULT_FILTER,
+    );
+    app.state.auto = res.status === 'empty' ? null : res;
+    app.state.filter = res.cfg;
+    if (res.analyses) {
+      const k = designKey(res.cfg);
+      items.forEach((t, i) => {
+        t.cache.set(k, res.analyses[i]);
+        limitCache(t.cache, 3);
+      });
+    }
+    if (designKey(res.cfg) !== prevKey) app.bus.emit('filter-changed');
+    app.bus.emit('auto-changed');
   },
 
-  setFilter(cfg) {
-    app.state.filter = { ...cfg };
-    saveFilter(app.state.filter);
-    app.recomputeRanking();
-    app.bus.emit('filter-changed');
-    app.bus.emit('takes-changed');
+  /** Red neuronal entrenada con los perfiles actuales (se re-entrena solo si cambian). */
+  getModel() {
+    const ps = app.state.profiles;
+    if (!ps.length) return null;
+    const k = modelKey(ps);
+    if (!app._model || app._modelKey !== k) {
+      app._model = trainModel(ps);
+      app._modelKey = k;
+    }
+    return app._model;
+  },
+  modelReady() {
+    return !!app._model && app._modelKey === modelKey(app.state.profiles);
+  },
+
+  /** Cambiaron las tomas: se re-sintoniza el filtro y se vuelve a ordenar. */
+  recomputeRanking() {
+    app.retune();
+    const analyses = app.state.takes.map((t) => (t ? app.analyze(t) : null));
+    app.state.rank = analyses.some(Boolean) ? rankTakes(analyses) : null;
   },
 
   saveProfiles() {
@@ -233,15 +273,59 @@ function fillIcons() {
   for (const el of $$('[data-icon]')) el.innerHTML = icons[el.dataset.icon] || '';
 }
 
+/** Contadores en las pestañas: tomas grabadas (n/5) y perfiles guardados. */
+function initBadges() {
+  const takes = $('#badge-grabar');
+  const profiles = $('#badge-perfiles');
+  app.bus.on('takes-changed', () => {
+    const n = app.state.takes.filter(Boolean).length;
+    takes.textContent = n ? `${n}/${NTAKES}` : '';
+    takes.classList.toggle('done', n === NTAKES);
+  });
+  app.bus.on('profiles-changed', () => {
+    const n = app.state.profiles.length;
+    profiles.textContent = n ? String(n) : '';
+    profiles.classList.toggle('done', n > 0);
+  });
+}
+
+/** Mapa de calor de ejemplo en la portada: un silbido sintético con sus recuadros, hecho con el mismo motor. */
+function initHeroPreview() {
+  const host = $('#hero-plot');
+  if (!host) return;
+  const plot = new Plot(host, {
+    height: 250,
+    margin: { l: 42, r: 12, t: 14, b: 28 },
+    x: { ...timeAxis(), label: '' },
+    y: { ...freqAxis(), label: '', min: 500, max: 5500 },
+    crosshair: null,
+    tooltip: () => '',
+    name: 'ejemplo',
+  });
+  const draw = () => {
+    const a = app.analyze(app.makeItem('demo', synthWhistle(DEMO_PEOPLE.ana, { fs: FS, dur: DUR, seed: 7 })));
+    const S = stft(a.y, FS, { N: 512, overlap: 0.875, win: 'hann', fmax: 8000 });
+    const r = dbRange(S.data, 56);
+    const d = a.design;
+    plot.setAxes({ x: { max: a.duration }, y: { min: Math.max(0, d.fl * 0.55), max: Math.min(8000, d.fh * 1.45) } });
+    plot.set({ heatmap: { ...S, vmin: r.vmin, vmax: r.vmax }, ...buildAnnotations(a, { compact: true }).layers });
+  };
+  setTimeout(draw, 60);
+  app.bus.on('filter-changed', draw);
+}
+
 function boot() {
   initTheme();
   fillIcons();
+  enhanceControls();
+  initBadges();
   initRecord(app);
   initAnalysis(app);
   initFilter(app);
   initProfiles(app);
   initVerify(app);
   initTabs();
+  initHeroPreview();
   app.bus.emit('takes-changed');
   app.bus.emit('profiles-changed');
 }

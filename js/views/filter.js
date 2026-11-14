@@ -1,26 +1,24 @@
-// Vista 3 · Filtro: diseño IIR/FIR, respuesta en frecuencia, retardo de grupo, impulso, polos/ceros y exportación.
+// Vista 3 · Filtro: auto-sintonía (el sistema elige el filtro; no hay controles manuales), respuesta en
+// frecuencia, retardo de grupo, impulso, polos/ceros y exportación.
 import { Plot, addExportButtons } from '../ui/plot.js';
 import { freqResponse, impulseResponse, firZerosPoles, toCHeader } from '../dsp/filters.js';
 import { WINDOW_NAMES } from '../dsp/fft.js';
-import { DEFAULT_FILTER } from '../store.js';
+import { cfgLabel } from '../dsp/autofilter.js';
 import { $, $$, fmt, fmtHz, icons, download } from '../util.js';
 import { freqAxis } from './common.js';
 
 export function initFilter(app) {
   const el = {
-    type: $('#filter-type'),
-    fl: $('#fl'),
-    fh: $('#fh'),
-    flVal: $('#fl-val'),
-    fhVal: $('#fh-val'),
-    order: $('#iir-order'),
-    win: $('#fir-win'),
-    taps: $('#fir-taps'),
-    tapsVal: $('#taps-val'),
+    state: $('#auto-state'),
+    decision: $('#auto-decision'),
+    reasons: $('#auto-reasons'),
+    duel: $('#auto-duel'),
+    duelWrap: $('#auto-duel-wrap'),
+    all: $('#auto-all'),
+    allWrap: $('#auto-all-wrap'),
     summary: $('#filter-summary'),
     exportH: $('#export-h'),
     copy: $('#copy-coefs'),
-    reset: $('#filter-reset'),
     coef: $('#coef-view'),
     pzIirInfo: $('#pz-iir-info'),
     pzFirInfo: $('#pz-fir-info'),
@@ -91,65 +89,76 @@ export function initFilter(app) {
       <div class="tip-row"><span>ángulo</span><b>${fmt(ang, 1)}° ≈ ${fmtHz(f)}</b></div>`;
   }
 
-  // ---------- controles ----------
-  function readControls() {
-    const cfg = { ...app.state.filter };
-    cfg.fl = Number(el.fl.value);
-    cfg.fh = Number(el.fh.value);
-    if (cfg.fh - cfg.fl < 300) {
-      if (document.activeElement === el.fl) cfg.fl = Math.max(200, cfg.fh - 300);
-      else cfg.fh = Math.min(7500, cfg.fl + 300);
-    }
-    cfg.order = Number(el.order.value);
-    cfg.win = el.win.value;
-    cfg.taps = Number(el.taps.value) | 1;
-    return cfg;
-  }
+  // ---------- auto-sintonía (solo lectura) ----------
+  const auto = () => (app.state.auto && app.state.auto.status === 'ok' ? app.state.auto : null);
 
-  function syncControls() {
-    const c = app.state.filter;
-    el.fl.value = c.fl;
-    el.fh.value = c.fh;
-    el.order.value = c.order;
-    el.win.value = c.win;
-    el.taps.value = c.taps;
-    el.flVal.textContent = fmtHz(c.fl);
-    el.fhVal.textContent = fmtHz(c.fh);
-    el.tapsVal.textContent = `${c.taps} (orden ${c.taps - 1})`;
-    for (const b of $$('button', el.type)) b.setAttribute('aria-pressed', String(b.dataset.type === c.type));
-  }
-
-  let timer = 0;
-  function onInput() {
-    const cfg = readControls();
-    el.flVal.textContent = fmtHz(cfg.fl);
-    el.fhVal.textContent = fmtHz(cfg.fh);
-    el.tapsVal.textContent = `${cfg.taps} (orden ${cfg.taps - 1})`;
-    clearTimeout(timer);
-    timer = setTimeout(() => app.setFilter(cfg), 160);
-  }
-  for (const c of [el.fl, el.fh, el.taps]) c.addEventListener('input', onInput);
-  for (const c of [el.order, el.win]) c.addEventListener('change', onInput);
-  el.type.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-type]');
-    if (!b) return;
-    app.setFilter({ ...readControls(), type: b.dataset.type });
-  });
-  el.reset.addEventListener('click', () => app.setFilter({ ...DEFAULT_FILTER }));
-
+  /** Los dos finalistas: el elegido y el mejor de la otra familia. Sin tomas: IIR y FIR provisionales. */
   const designs = () => {
+    const au = auto();
+    if (au) return { iir: app.getDesign(au.finalists.iir.cfg), fir: app.getDesign(au.finalists.fir.cfg) };
     const c = app.state.filter;
     return {
       iir: app.getDesign({ ...c, type: 'iir' }),
       fir: app.getDesign({ ...c, type: 'fir' }),
     };
   };
+
+  function renderAuto() {
+    const au = auto();
+    const c = app.state.filter;
+    const st = app.state.auto ? app.state.auto.status : 'empty';
+    el.state.textContent = au ? 'Elegido por el sistema' : st === 'no-whistle' ? 'Sin silbido detectado' : 'Provisional';
+    el.state.className = `pill ${au ? 'auto-ok' : 'auto-wait'}`;
+    el.decision.innerHTML = `<span class="fam">${c.type === 'iir' ? 'IIR' : 'FIR'}</span>
+      <strong>${cfgLabel(c)}</strong>
+      <small>Banda ${fmt(c.fl, 0)}–${fmt(c.fh, 0)} Hz${au ? '' : ' · provisional hasta que grabes tomas'}</small>`;
+
+    if (!app.state.auto) {
+      el.reasons.innerHTML = `<li>Todavía no hay tomas. Mientras tanto se usa un filtro provisional de 1–4 kHz.</li>
+        <li>Graba tus tomas en <a href="#grabar">Grabar</a> (o usa la demo) y el sistema elegirá el filtro automáticamente.</li>`;
+    } else {
+      el.reasons.innerHTML = app.state.auto.reasons.map((r) => `<li>${r}</li>`).join('');
+    }
+
+    el.duelWrap.hidden = !au;
+    el.allWrap.hidden = !au;
+    if (!au) return;
+    const F = au.finalists;
+    const win = au.winner;
+    const col = (fam) => (fam === win ? ' class="win"' : '');
+    const row = (label, f, d = 1, unit = '') =>
+      `<tr><td>${label}</td><td${col('iir')}>${f(F.iir)}${unit}</td><td${col('fir')}>${f(F.fir)}${unit}</td></tr>`;
+    const n = (v, d = 1) => fmt(v, d);
+    el.duel.innerHTML = `<thead><tr><th>Final</th><th${col('iir')}>${win === 'iir' ? '★ ' : ''}${cfgLabel(F.iir.cfg)}</th><th${col('fir')}>${win === 'fir' ? '★ ' : ''}${cfgLabel(F.fir.cfg)}</th></tr></thead>
+      <tbody>
+        ${row('Banda', (x) => `${x.cfg.fl}–${x.cfg.fh} Hz`)}
+        ${row('Calidad en tus tomas', (x) => `<b>${n(x.quality, 0)}</b> pts`)}
+        ${row('Tomas válidas', (x) => `${x.valid}/${au.survey.takes}`)}
+        ${row('SNR a la salida', (x) => n(x.metrics.snrDb), 1, ' dB')}
+        ${row('Caída en los bordes', (x) => n(x.metrics.edgeDb, 2), 1, ' dB')}
+        ${row('Rizado sobre tus notas', (x) => n(x.metrics.rippleDb, 2), 1, ' dB')}
+        ${row('Dispersión del retardo', (x) => n(x.metrics.gdSpreadMs, 2), 1, ' ms')}
+        ${row('Costo en el ESP32', (x) => `${x.metrics.cost} mult/muestra`)}
+        ${row('Puntaje final', (x) => `<b>${n(x.final, 2)}</b>`)}
+      </tbody>`;
+
+    const winKey = app.designKey(c);
+    const finKeys = new Set([app.designKey(F.iir.cfg), app.designKey(F.fir.cfg)]);
+    el.all.innerHTML = `<thead><tr><th>#</th><th>Filtro</th><th>Banda (Hz)</th><th>SNR</th><th>Borde</th><th>Retardo</th><th>Puntaje</th></tr></thead><tbody>${au.candidates
+      .map((x, i) => {
+        const k = app.designKey(x.cfg);
+        const cls = k === winKey ? 'win' : finKeys.has(k) ? 'fin' : '';
+        return `<tr class="${cls}"><td>${i + 1}</td><td>${k === winKey ? '★ ' : ''}${cfgLabel(x.cfg)}</td><td>${x.cfg.fl}–${x.cfg.fh}</td><td>${n(x.metrics.snrDb)} dB</td><td>${n(x.metrics.edgeDb, 2)} dB</td><td>${n(x.metrics.gdSpreadMs, 2)} ms</td><td>${n(x.metrics.score, 2)}</td></tr>`;
+      })
+      .join('')}</tbody>`;
+    el.allWrap.querySelector('summary').textContent = `Ver los ${au.candidates.length} candidatos evaluados`;
+  }
   const active = () => app.getDesign(app.state.filter);
 
   el.exportH.addEventListener('click', () => {
     const d = active();
-    download(d.kind === 'iir' ? 'silbido_filtro_iir.h' : 'silbido_filtro_fir.h', toCHeader(d), 'text/x-c');
-    app.toast('Encabezado C descargado: inclúyelo en tu sketch del ESP32 y llama a silbido_filtrar(x) por cada muestra.');
+    download('filtro.h', toCHeader(d), 'text/x-c');
+    app.toast('filtro.h descargado: reemplaza el de esp32/silbido_id/ y vuelve a subir el sketch. La ESP32 filtrará con este filtro.');
   });
   el.copy.addEventListener('click', async () => {
     const d = active();
@@ -173,25 +182,44 @@ export function initFilter(app) {
       return;
     }
     dirty = false;
-    syncControls();
+    renderAuto();
     const { iir, fir } = designs();
     const act = app.state.filter.type;
+    const actD = act === 'iir' ? iir : fir;
     const ri = freqResponse(iir, 1024);
     const rf = freqResponse(fir, 1024);
     const df = app.FS / 2 / 1024;
-    const band = [{ x0: iir.fl, x1: iir.fh, color: '--series-1', alpha: 0.06, legend: 'Banda de paso' }];
+    const band = [{ x0: actD.fl, x1: actD.fh, color: '--series-1', alpha: 0.06, legend: 'Banda de paso elegida' }];
     const cut = [
-      { x: iir.fl, color: '--text-muted', label: `fL = ${fmt(iir.fl, 0)} Hz`, align: 'right' },
-      { x: iir.fh, color: '--text-muted', label: `fH = ${fmt(iir.fh, 0)} Hz` },
+      { x: actD.fl, color: '--text-muted', label: `fL = ${fmt(actD.fl, 0)} Hz`, align: 'right' },
+      { x: actD.fh, color: '--text-muted', label: `fH = ${fmt(actD.fh, 0)} Hz` },
     ];
-    const lab = (d, isAct) => `${d.kind === 'iir' ? `IIR orden ${d.order}` : `FIR M = ${d.numTaps}`}${isAct ? ' (activo)' : ''}`;
+    const lab = (d, isAct) => `${d.kind === 'iir' ? `IIR orden ${d.order}` : `FIR M = ${d.numTaps}`}${isAct ? ' (elegido)' : ''}`;
+    const extra = { lines: [], bands: [] };
+    const au = auto();
+    if (au) {
+      // lo que el sistema midió en tus tomas: rango del silbido y espectro del ruido de fondo
+      const sv = au.survey;
+      extra.bands.push({ x0: sv.lo, x1: sv.hi, color: '--good', alpha: 0.12, legend: 'Rango de tu silbido' });
+      let nmax = 1e-30;
+      for (const v of sv.noise) nmax = Math.max(nmax, v);
+      extra.lines.push({
+        x0: 0,
+        dx: sv.df,
+        y: Float64Array.from(sv.noise, (v) => Math.max(-90, 10 * Math.log10((v + 1e-30) / nmax))),
+        color: '--text-muted',
+        width: 1.2,
+        label: 'Ruido medido (dB rel.)',
+      });
+    }
     P.mag.set({
-      bands: band,
+      bands: [...band, ...extra.bands],
       vlines: cut,
       hlines: [{ y: -3, color: '--text-muted', label: '−3 dB' }],
       lines: [
-        { x0: df / 2, dx: df, y: ri.magDb, color: '--series-1', width: act === 'iir' ? 2.4 : 1.6, label: lab(iir, act === 'iir') },
-        { x0: df / 2, dx: df, y: rf.magDb, color: '--series-2', width: act === 'fir' ? 2.4 : 1.6, label: lab(fir, act === 'fir') },
+        ...extra.lines,
+        { x0: df / 2, dx: df, y: ri.magDb, color: '--series-1', width: act === 'iir' ? 2.6 : 1.4, label: lab(iir, act === 'iir') },
+        { x0: df / 2, dx: df, y: rf.magDb, color: '--series-2', width: act === 'fir' ? 2.6 : 1.4, label: lab(fir, act === 'fir') },
       ],
     });
 
@@ -284,8 +312,9 @@ export function initFilter(app) {
   }
 
   app.bus.on('filter-changed', render);
+  app.bus.on('auto-changed', render);
   app.bus.on('tab-shown', (name) => {
     if (name === 'filtro' && dirty) render();
   });
-  syncControls();
+  renderAuto();
 }

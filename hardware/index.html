@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Circuito ESP32 + INMP441 · Silbido ID</title>
+  <meta name="description" content="Esquemático, vista 3D, conexiones, materiales y montaje para conectar el micrófono INMP441 a una ESP32.">
+  <meta name="theme-color" content="#080a10">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23b49bff'/%3E%3Cstop offset='1' stop-color='%233dd0ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Cpath d='M5 16c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-14 5-14 2.5 7 5 7' fill='none' stroke='%2305121a' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="hardware.css">
+  <script>
+    try { var t = localStorage.getItem('silbido-id:theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Saltar al contenido</a>
+  <header class="app-header">
+    <div class="header-inner">
+      <a class="brand" href="../index.html#grabar" aria-label="Volver a Silbido ID">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="36" height="36"><defs><linearGradient id="brand-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b49bff"/><stop offset="1" stop-color="#3dd0ee"/></linearGradient></defs><rect width="32" height="32" rx="10" fill="url(#brand-g)"/><path d="M5 16c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-14 5-14 2.5 7 5 7" fill="none" stroke="#05121a" stroke-width="2.6" stroke-linecap="round"/></svg>
+        </span>
+        <span class="brand-text"><strong>Silbido ID</strong><small>Hardware · ESP32</small></span>
+      </a>
+      <nav class="tabs" aria-label="Secciones de la página">
+        <button type="button" data-go="esquema" aria-selected="true"><span class="tab-ico" data-icon="chip"></span><span class="tab-label">Esquemático</span></button>
+        <button type="button" data-go="vista3d" aria-selected="false"><span class="tab-ico" data-icon="heat"></span><span class="tab-label">Vista 3D</span></button>
+        <button type="button" data-go="conexiones" aria-selected="false"><span class="tab-ico" data-icon="sliders"></span><span class="tab-label">Conexiones</span></button>
+        <button type="button" data-go="materiales" aria-selected="false"><span class="tab-ico" data-icon="table"></span><span class="tab-label">Materiales</span></button>
+        <button type="button" data-go="montaje" aria-selected="false"><span class="tab-ico" data-icon="check"></span><span class="tab-label">Montaje</span></button>
+      </nav>
+      <button type="button" class="icon-btn theme-btn" id="theme-btn" aria-label="Cambiar tema"></button>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="tab-panel">
+      <a class="back-link" href="../index.html#grabar"><span data-icon="redo"></span>Volver a la app</a>
+
+      <div class="hw-hero">
+        <div>
+          <p class="eyebrow">Próximo paso del proyecto</p>
+          <h1>Circuito ESP32 + INMP441</h1>
+        </div>
+        <p class="lead">Un micrófono digital I²S conectado a la ESP32 con solo seis cables. La placa lee el sonido a 16 kHz, igual que la web, y repite el filtro y la detección de tono para reconocer tu silbido.</p>
+        <div class="stat-row">
+          <div class="stat"><b>3,3 V</b><span>alimentación del micrófono</span></div>
+          <div class="stat"><b>I²S · 16 kHz</b><span>mismo muestreo que la web</span></div>
+          <div class="stat"><b>6 cables</b><span>más 6 pines soldados</span></div>
+          <div class="stat"><b>~1,4 mA</b><span>consumo del INMP441</span></div>
+        </div>
+        <div class="callout info">
+          <span data-icon="alert"></span>
+          <div><b>Supuesto:</b> usé la ESP32 <b>DevKit V1 de 30 pines</b> (ESP-WROOM-32). Los GPIO que elegí (25, 26 y 32) existen en casi todas las ESP32, pero la <b>posición física</b> de los pines cambia entre modelos: guíate siempre por las letras impresas en tu placa.</div>
+        </div>
+      </div>
+
+      <!-- ====== ESQUEMÁTICO ====== -->
+      <section class="hw" id="esquema">
+        <div class="hw-title"><h2>Esquemático</h2><span>Toca un cable para resaltarlo</span></div>
+        <article class="card">
+          <div class="toolbar-row">
+            <div class="nets" id="nets-sch" role="group" aria-label="Señales"></div>
+            <div class="btn-row">
+              <button type="button" class="btn ghost sm" id="sch-dl"><span class="ico" data-icon="download"></span>Descargar SVG</button>
+            </div>
+          </div>
+          <div class="sch-wrap" id="sch-host"></div>
+          <div class="sch-legend">
+            <span>Líneas continuas = conexiones obligatorias</span>
+            <span>Líneas punteadas = opcional</span>
+            <span>Todos los GND están unidos</span>
+          </div>
+        </article>
+      </section>
+
+      <!-- ====== 3D ====== -->
+      <section class="hw" id="vista3d">
+        <div class="hw-title"><h2>Vista 3D</h2><span>Ilustrativa, no está a escala exacta</span></div>
+        <article class="card">
+          <div class="toolbar-row">
+            <div class="view-btns" role="group" aria-label="Vistas">
+              <button type="button" class="btn ghost sm" data-view="iso">Isométrica</button>
+              <button type="button" class="btn ghost sm" data-view="top">Desde arriba</button>
+              <button type="button" class="btn ghost sm" data-view="front">De frente</button>
+              <button type="button" class="btn ghost sm" data-view="mic">Micrófono</button>
+            </div>
+            <div class="view-btns">
+              <label class="check"><input type="checkbox" id="opt-tags" checked><span>Etiquetas</span></label>
+              <label class="check"><input type="checkbox" id="opt-allpins"><span>Todos los pines</span></label>
+              <label class="check"><input type="checkbox" id="opt-spin"><span>Girar solo</span></label>
+              <button type="button" class="btn ghost sm" id="shot3d"><span class="ico" data-icon="image"></span>PNG</button>
+            </div>
+          </div>
+          <div class="nets" id="nets-3d" role="group" aria-label="Señales"></div>
+          <div class="stage" id="stage" aria-label="Modelo 3D del circuito: ESP32, INMP441 y cables sobre una protoboard" role="img">
+            <div class="tags3d" id="tags3d"></div>
+            <div class="stage-hint">Arrastra para girar · rueda o pellizco para acercar</div>
+            <div class="stage-msg" id="stage-msg">Cargando la vista 3D…</div>
+          </div>
+        </article>
+      </section>
+
+      <!-- ====== CONEXIONES ====== -->
+      <section class="hw" id="conexiones">
+        <div class="hw-title"><h2>Todas las conexiones</h2><span>6 cables · toca una fila para resaltarla</span></div>
+        <article class="card">
+          <div class="table-wrap">
+            <table class="table conn" id="conn-table">
+              <thead><tr><th>#</th><th>Señal</th><th>INMP441</th><th>ESP32</th><th>Cable</th><th>Para qué sirve</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+        <div class="rules" style="margin-top: 16px">
+          <div class="callout bad"><span data-icon="alert"></span><div><b>Nunca 5 V al micrófono.</b> El INMP441 funciona con 1,8 a 3,3 V. Conéctalo al pin <b>3V3</b>, no a VIN ni a 5V.</div></div>
+          <div class="callout"><span data-icon="alert"></span><div><b>L/R a GND = canal izquierdo.</b> Si lo dejas sin conectar, el micrófono puede quedar "flotando" y entregar solo ruido o silencio. En el código se lee el canal izquierdo.</div></div>
+          <div class="callout"><span data-icon="alert"></span><div><b>El orden de los pines cambia por fabricante.</b> En la 3D puse uno de ejemplo. En tu módulo guíate por las letras: <code>SCK</code>, <code>WS</code>, <code>SD</code>, <code>VDD</code>, <code>GND</code>, <code>L/R</code>.</div></div>
+        </div>
+        <h3 style="margin: 22px 0 10px">Pines para el código</h3>
+        <div class="code-wrap">
+          <pre class="code" id="code-pins"></pre>
+          <button type="button" class="btn ghost sm" id="copy-pins"><span class="ico" data-icon="copy"></span>Copiar</button>
+        </div>
+      </section>
+
+      <!-- ====== MATERIALES ====== -->
+      <section class="hw" id="materiales">
+        <div class="hw-title"><h2>Materiales</h2><span>Marca lo que ya tienes</span></div>
+        <article class="card">
+          <ul class="bom" id="bom"></ul>
+        </article>
+      </section>
+
+      <!-- ====== MONTAJE ====== -->
+      <section class="hw" id="montaje">
+        <div class="hw-title"><h2>Montaje paso a paso</h2><span>Con la ESP32 desconectada del USB</span></div>
+        <ol class="steps">
+          <li>
+            <div>
+              <h3>Suelda los 6 pines al micrófono</h3>
+              <p>Los pines vienen sueltos en la bolsa. Sujeta la tira con el módulo sobre la protoboard para que quede recta y suelda las 6 patas.</p>
+              <ul>
+                <li>Hazlo de modo que, al enchufar el módulo, el <b>agujerito del micrófono quede mirando hacia arriba</b> y sin tapar.</li>
+                <li>Si no tienes soldador, pídelo en un taller de electrónica: tarda unos minutos.</li>
+              </ul>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Pon la ESP32 en la protoboard</h3>
+              <p>Colócala <b>a caballo sobre el canal central</b>, con el USB hacia un borde y dejando una fila libre de agujeros a cada lado de los pines. Empuja parejo, sin doblar los pines.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Enchufa el micrófono en otras columnas</h3>
+              <p>Ponlo en el extremo opuesto al USB, en columnas que <b>no compartan</b> con la ESP32. Los 6 pines van en 6 columnas seguidas.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Conecta primero la alimentación</h3>
+              <p>Cable rojo de <b>3V3</b> a <b>VDD</b> y cable negro de <b>GND</b> a <b>GND</b>. Después une <b>L/R</b> con GND.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Conecta las tres señales</h3>
+              <ul>
+                <li><b>GPIO26</b> → <b>SCK</b> (amarillo)</li>
+                <li><b>GPIO25</b> → <b>WS</b> (azul)</li>
+                <li><b>GPIO32</b> → <b>SD</b> (verde)</li>
+              </ul>
+              <p>Usa cables cortos (menos de 15 cm) y evita que SCK corra pegado al cable de SD.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Revisa antes de conectar el USB</h3>
+              <ul>
+                <li>El cable de <b>VDD</b> va a <b>3V3</b> y no a VIN.</li>
+                <li>No hay dos cables en la misma columna por error.</li>
+                <li>Con un multímetro en continuidad, 3V3 y GND <b>no deben sonar</b> entre sí.</li>
+              </ul>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Prueba el micrófono</h3>
+              <p>Conecta el USB, elige la placa <b>ESP32 Dev Module</b> (núcleo esp32 3.x), carga este programa mínimo y abre el <b>Trazador Serie</b> a <b>115200</b> baudios. Al silbar cerca del micrófono, la curva <b>izq</b> debe subir claramente.</p>
+              <div class="code-wrap" style="margin-top: 10px">
+                <pre class="code" id="code-test"></pre>
+                <button type="button" class="btn ghost sm" id="copy-test"><span class="ico" data-icon="copy"></span>Copiar</button>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Sube el filtro y conéctala a la web</h3>
+              <p>Sube <code>esp32/silbido_id/silbido_id.ino</code>. La ESP32 <b>filtra</b> la señal del micrófono (bloqueo de DC, pasa-banda Butterworth de orden 6 de 400–7000 Hz, ganancia con limitador suave) y la manda por USB. La web hace la identificación.</p>
+              <ul>
+                <li>Para comprobarla sola: Trazador Serie a <b>921600</b> baudios y escribe <b>N</b>. Al silbar, la curva <b>filtrada</b> sube junto a la de <b>entrada</b>; al hablar, queda abajo.</li>
+                <li>En la web (Chrome o Edge): <b>Grabar → Usar ESP32 (USB)</b> y elige el puerto.</li>
+                <li>Para que filtre con tu banda: en la web, <b>Perfiles → Filtro ESP32</b>, reemplaza <code>filtro.h</code> y vuelve a subir.</li>
+                <li>¿Sin computador? <code>esp32/reconocedor_autonomo</code> reconoce dentro de la placa y enciende GPIO4.</li>
+              </ul>
+            </div>
+          </li>
+        </ol>
+
+        <h3 style="margin: 26px 0 6px">Si algo no funciona</h3>
+        <article class="card faq">
+          <details><summary>La ESP32 no aparece en el computador</summary><p>Casi siempre es el cable: muchos solo cargan y no llevan datos. Prueba con otro. Si sigue sin aparecer, instala el driver del chip USB de tu placa (CP2102 o CH340).</p></details>
+          <details><summary>El valor siempre es 0 o casi 0</summary><p>Revisa L/R (debe ir a GND), que estés mirando la curva <b>izq</b>, y que SD esté en GPIO32. Si sube <b>der</b> en vez de izq, L/R quedó a 3V3 (el reconocedor lo detecta solo). Si cambiaste un pin en el cableado, cámbialo también en el código.</p></details>
+          <details><summary>Solo veo ruido y no cambia al silbar</summary><p>Suele ser SCK y WS intercambiados, o un cable flojo. Comprueba que GPIO26 va a SCK y GPIO25 a WS, y vuelve a empujar los cables.</p></details>
+          <details><summary>El micrófono se calienta</summary><p>Desconecta el USB de inmediato. Revisa que VDD no esté en 5 V y que VDD y GND no se toquen.</p></details>
+          <details><summary>La señal es muy débil</summary><p>El INMP441 entrega 24 bits en una palabra de 32. Hay que desplazar el valor a la derecha (por ejemplo, ocho posiciones) y, si hace falta, amplificar por software. Acerca el micrófono a unos 10 cm.</p></details>
+          <details><summary>Los valores tienen un desfase constante</summary><p>Es normal: el micrófono tiene un nivel de continua. El programa final lo elimina restando la media antes del filtro.</p></details>
+        </article>
+        <p class="muted small" style="margin-top: 14px">Referencias: <a href="https://randomnerdtutorials.com/esp32-inmp441-i2s-microphone-arduino/" target="_blank" rel="noopener">guía de conexión del INMP441 con ESP32</a> y la hoja de datos del fabricante. Los GPIO de datos son configurables, por eso cada tutorial usa números distintos.</p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <p><b>Silbido ID</b> · Hardware. El filtro que exportas desde la pestaña Filtro (<code>.h</code>) es el mismo que correrá en la ESP32.</p>
+  </footer>
+
+  <script type="module" src="hardware.js"></script>
+</body>
+</html>

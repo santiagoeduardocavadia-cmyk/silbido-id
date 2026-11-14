@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Silbido ID</title>
   <meta name="description" content="Graba tu silbido, fíltralo, analízalo con FFT, STFT y wavelets, crea tu huella y verifica quién silba. Proyecto de Procesamiento de Señales II.">
-  <meta name="theme-color" content="#2a78d6">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232a78d6'/%3E%3Cpath d='M5 16c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-14 5-14 2.5 7 5 7' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+  <meta name="theme-color" content="#080a10">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23b49bff'/%3E%3Cstop offset='1' stop-color='%233dd0ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Cpath d='M5 16c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-14 5-14 2.5 7 5 7' fill='none' stroke='%2305121a' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/styles.css">
   <script>
     // Aplica el tema guardado antes de pintar (evita parpadeo)
@@ -19,18 +19,23 @@
     <div class="header-inner">
       <a class="brand" href="#grabar" aria-label="Silbido ID, inicio">
         <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="34" height="34"><rect width="32" height="32" rx="9" fill="currentColor"/><path d="M5 16c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-14 5-14 2.5 7 5 7" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>
+          <svg viewBox="0 0 32 32" width="36" height="36"><defs><linearGradient id="brand-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b49bff"/><stop offset="1" stop-color="#3dd0ee"/></linearGradient></defs><rect width="32" height="32" rx="10" fill="url(#brand-g)"/><path d="M5 16c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-14 5-14 2.5 7 5 7" fill="none" stroke="#05121a" stroke-width="2.6" stroke-linecap="round"/></svg>
         </span>
-        <span class="brand-text"><strong>Silbido ID</strong><small>Filtra, analiza y reconoce silbidos</small></span>
+        <span class="brand-text"><strong>Silbido ID</strong><small>Procesamiento de Señales II</small></span>
       </a>
       <nav class="tabs" role="tablist" aria-label="Secciones">
-        <button type="button" role="tab" id="tabbtn-grabar" aria-controls="tab-grabar" data-tab="grabar"><span class="tab-num">1</span>Grabar</button>
-        <button type="button" role="tab" id="tabbtn-analisis" aria-controls="tab-analisis" data-tab="analisis"><span class="tab-num">2</span>Análisis</button>
-        <button type="button" role="tab" id="tabbtn-filtro" aria-controls="tab-filtro" data-tab="filtro"><span class="tab-num">3</span>Filtro</button>
-        <button type="button" role="tab" id="tabbtn-perfiles" aria-controls="tab-perfiles" data-tab="perfiles"><span class="tab-num">4</span>Perfiles</button>
-        <button type="button" role="tab" id="tabbtn-verificar" aria-controls="tab-verificar" data-tab="verificar"><span class="tab-num">5</span>Verificar</button>
+        <button type="button" role="tab" id="tabbtn-grabar" aria-controls="tab-grabar" data-tab="grabar"><span class="tab-ico" data-icon="mic"></span><span class="tab-label">Grabar</span><span class="tab-badge" id="badge-grabar"></span></button>
+        <button type="button" role="tab" id="tabbtn-analisis" aria-controls="tab-analisis" data-tab="analisis"><span class="tab-ico" data-icon="heat"></span><span class="tab-label">Análisis</span></button>
+        <button type="button" role="tab" id="tabbtn-filtro" aria-controls="tab-filtro" data-tab="filtro"><span class="tab-ico" data-icon="sliders"></span><span class="tab-label">Filtro</span></button>
+        <button type="button" role="tab" id="tabbtn-perfiles" aria-controls="tab-perfiles" data-tab="perfiles"><span class="tab-ico" data-icon="fingerprint"></span><span class="tab-label">Perfiles</span><span class="tab-badge" id="badge-perfiles"></span></button>
+        <button type="button" role="tab" id="tabbtn-verificar" aria-controls="tab-verificar" data-tab="verificar"><span class="tab-ico" data-icon="shield"></span><span class="tab-label">Verificar</span></button>
       </nav>
-      <button type="button" class="icon-btn theme-btn" id="theme-btn" aria-label="Cambiar tema"></button>
+      <div class="header-end">
+        <button type="button" class="dev-chip" id="dev-chip" title="Estado de la ESP32 y del micrófono (clic para ver el detalle)">
+          <span class="dot" id="dev-chip-esp"></span><span class="lbl">ESP32</span><span class="dot" id="dev-chip-mic"></span><span class="lbl">Mic</span>
+        </button>
+        <button type="button" class="icon-btn theme-btn" id="theme-btn" aria-label="Cambiar tema"></button>
+      </div>
     </div>
   </header>
 
@@ -39,10 +44,23 @@
     <section class="tab-panel" id="tab-grabar" role="tabpanel" aria-labelledby="tabbtn-grabar">
       <div class="hero">
         <div class="hero-text">
-          <p class="eyebrow">Procesamiento de Señales II · Reto del silbido</p>
+          <p class="eyebrow">Reto del silbido</p>
           <h1>Crea la huella de tu silbido</h1>
-          <p>Graba <b>5 silbidos de 5 segundos</b>. La web los filtra, los analiza con FFT, STFT y wavelets, elige la mejor toma y guarda tu perfil. Después, cualquiera puede silbar en <b>Verificar</b> y verás si su silbido coincide con el tuyo.</p>
+          <p class="lead">Tu silbido es una melodía con una frecuencia que sube y baja. La web la mide, la dibuja como un mapa de calor y la guarda como tu huella.</p>
+          <ol class="hero-steps">
+            <li><span><b>Graba 5 tomas</b> de 5 segundos con tu micrófono</span></li>
+            <li><span>La web <b>filtra, analiza y elige la mejor</b></span></li>
+            <li><span><b>Guarda tu perfil</b> y pruébalo en Verificar</span></li>
+          </ol>
         </div>
+        <figure class="hero-visual">
+          <div class="hero-screen"><div id="hero-plot" role="img" aria-label="Ejemplo de mapa de calor de un silbido con sus recuadros anotados"></div></div>
+          <figcaption>Así ve el sistema un silbido de ejemplo: cada recuadro marca un tramo con tono.</figcaption>
+        </figure>
+      </div>
+
+      <details class="card flow">
+        <summary><span class="h-ico" data-icon="chip"></span>¿Cómo funciona por dentro?</summary>
         <ol class="pipeline" aria-label="Cadena de procesamiento">
           <li><span>Micrófono</span><small>48 kHz → 16 kHz</small></li>
           <li><span>Filtro pasa-banda</span><small>IIR / FIR</small></li>
@@ -52,20 +70,38 @@
           <li><span>DTW</span><small>compara melodías</small></li>
           <li><span>Decisión</span><small>¿eres tú?</small></li>
         </ol>
-      </div>
+      </details>
 
       <div class="grid two">
         <article class="card" id="mic-card">
           <div class="card-head">
-            <h2>Micrófono</h2>
+            <h2><span class="h-ico" data-icon="mic"></span>Micrófono</h2>
             <span class="pill" id="mic-status">Apagado</span>
           </div>
           <div class="mic-controls">
             <button type="button" class="btn primary" id="mic-start"></button>
+            <button type="button" class="btn ghost" id="esp32-connect" title="Usa la ESP32 + INMP441 como micrófono: la placa filtra la señal y la manda por USB (Chrome o Edge)"><span class="ico"></span><span class="lbl">Usar ESP32 (USB)</span></button>
             <label class="field grow">
               <span>Entrada de audio</span>
               <select id="mic-select" disabled><option>Activa el micrófono para ver la lista</option></select>
             </label>
+          </div>
+          <div class="dev-status" id="dev-status" aria-live="polite">
+            <div class="dev-row off" id="dev-esp">
+              <span class="dot" aria-hidden="true"></span>
+              <div class="dev-txt"><b>ESP32</b><small id="dev-esp-txt">Desconectada. Conéctala por USB y pulsa "Usar ESP32 (USB)".</small></div>
+              <span class="dev-meta" id="dev-esp-meta"></span>
+            </div>
+            <div class="dev-row off" id="dev-mic">
+              <span class="dot" aria-hidden="true"></span>
+              <div class="dev-txt"><b>Micrófono INMP441</b><small id="dev-mic-txt">Sin conexión con la ESP32.</small></div>
+              <div class="dev-gain" id="dev-gain" hidden>
+                <button type="button" class="btn ghost sm" data-gain="-" title="Bajar la ganancia de la ESP32 3 dB">−3 dB</button>
+                <span id="dev-gain-val">+12 dB</span>
+                <button type="button" class="btn ghost sm" data-gain="+" title="Subir la ganancia de la ESP32 3 dB">+3 dB</button>
+              </div>
+              <div class="dev-level" aria-hidden="true"><i id="dev-mic-bar"></i></div>
+            </div>
           </div>
           <label class="switch">
             <input type="checkbox" id="monitor-toggle" disabled>
@@ -78,7 +114,10 @@
           </div>
           <div class="live">
             <canvas id="live-canvas" aria-label="Espectrograma en vivo del micrófono" role="img"></canvas>
-            <div class="live-axis" aria-hidden="true"><span>8 kHz</span><span>4 kHz</span><span>0</span></div>
+            <div class="live-band" id="live-band" aria-hidden="true"><span id="live-band-label">Banda del filtro</span></div>
+            <div class="live-peak" id="live-peak" aria-hidden="true"><span id="live-peak-label"></span></div>
+            <div class="live-axis" aria-hidden="true"><span>8k</span><span>6k</span><span>4k</span><span>2k</span><span>0</span></div>
+            <div class="live-idle" id="live-idle"><span data-icon="mic"></span><span>Activa el micrófono para ver tu silbido en vivo</span></div>
           </div>
           <p class="live-readout" id="live-readout">Frecuencia dominante: —</p>
           <details class="explain">
@@ -93,7 +132,7 @@
 
         <article class="card" id="takes-card">
           <div class="card-head">
-            <h2>Tus 5 tomas</h2>
+            <h2><span class="h-ico" data-icon="wave"></span>Tus 5 tomas</h2>
             <span class="pill" id="takes-count">0/5</span>
           </div>
           <label class="field">
@@ -102,7 +141,7 @@
           </label>
           <div class="rec-row">
             <button type="button" class="btn record" id="rec-next"><span class="rec-dot" aria-hidden="true"></span><span class="lbl">Grabar toma 1 · 5 s</span></button>
-            <label class="btn ghost file-btn"><span class="ico"></span>Subir audio<input type="file" id="file-take" accept="audio/*" hidden></label>
+            <label class="btn ghost file-btn" title="Puedes elegir varios audios; uno largo se parte en tomas de 5 s"><span class="ico"></span>Subir audios<input type="file" id="file-take" accept="audio/*" multiple hidden></label>
           </div>
           <div class="rec-progress" id="rec-progress" hidden>
             <div class="rec-count" id="rec-count">3</div>
@@ -155,13 +194,33 @@
         </div>
       </div>
       <div class="empty-state" id="analysis-empty">
+        <span class="empty-ico" data-icon="heat"></span>
         <p><b>Aún no hay nada que analizar.</b></p>
         <p>Graba o sube un silbido en <a href="#grabar">Grabar</a>, o prueba un silbido en <a href="#verificar">Verificar</a>.</p>
       </div>
       <div id="analysis-content" hidden>
         <p class="status-line" id="analysis-status" aria-live="polite"></p>
-        <div class="tiles" id="feature-tiles"></div>
 
+        <article class="card annot" id="annot-card">
+          <div class="annot-head">
+            <div>
+              <h2>Mapa de calor: lo que el sistema toma</h2>
+              <p>Cada recuadro marca un tramo donde detectó un silbido. Pasa el cursor sobre una tarjeta de abajo para ver dónde aparece en el mapa, o púlsala para ocultarla.</p>
+            </div>
+            <div class="annot-tools">
+              <div class="seg" role="radiogroup" aria-label="Señal del mapa" id="annot-sig">
+                <button type="button" data-sig="y" aria-pressed="true">Filtrada</button>
+                <button type="button" data-sig="x" aria-pressed="false">Original</button>
+              </div>
+              <div class="card-tools" id="tools-annot"></div>
+            </div>
+          </div>
+          <div class="plot-host" id="plot-annot"></div>
+          <div class="feat-head"><b>Qué mide cada marca</b><button type="button" class="btn link" id="annot-reset">Mostrar todo</button></div>
+          <div class="feat-grid" id="feat-grid"></div>
+        </article>
+
+        <div class="section-title">Señal y espectro</div>
         <article class="card">
           <div class="card-head"><h2>Señal en el tiempo</h2><div class="card-tools" id="tools-time"></div></div>
           <div class="plot-host" id="plot-time"></div>
@@ -194,6 +253,7 @@
           </article>
         </div>
 
+        <div class="section-title">Tiempo y frecuencia</div>
         <article class="card">
           <div class="card-head"><h2>Espectrograma (STFT)</h2><div class="card-tools" id="tools-stft"></div></div>
           <div class="controls-row">
@@ -219,10 +279,11 @@
           </details>
         </article>
 
+        <div class="section-title">Wavelets</div>
         <article class="card">
-          <div class="card-head"><h2>Wavelets</h2><div class="card-tools" id="tools-cwt"></div></div>
+          <div class="card-head"><h2>Escalograma y DWT</h2><div class="card-tools" id="tools-cwt"></div></div>
           <div class="controls-row">
-            <div class="seg" role="radiogroup" aria-label="Señal analizada">
+            <div class="seg" id="cwt-sig" role="radiogroup" aria-label="Señal analizada">
               <button type="button" data-sig="y" aria-pressed="true">Filtrada</button>
               <button type="button" data-sig="x" aria-pressed="false">Original</button>
             </div>
@@ -254,38 +315,22 @@
     <!-- ======================= 3 · FILTRO ======================= -->
     <section class="tab-panel" id="tab-filtro" role="tabpanel" aria-labelledby="tabbtn-filtro" hidden>
       <div class="grid filter-layout">
-        <article class="card" id="filter-controls">
-          <div class="card-head"><h2>Diseño del filtro pasa-banda</h2></div>
-          <div class="seg wide" role="radiogroup" aria-label="Filtro activo" id="filter-type">
-            <button type="button" data-type="iir" aria-pressed="true">IIR Butterworth</button>
-            <button type="button" data-type="fir" aria-pressed="false">FIR por ventanas</button>
+        <article class="card auto-card" id="filter-auto">
+          <div class="card-head"><h2><span class="ico" data-icon="sparkle"></span>Auto-sintonía del filtro</h2><span class="pill" id="auto-state">Provisional</span></div>
+          <div class="auto-decision" id="auto-decision"></div>
+          <p class="lock-note"><span class="ico" data-icon="shield"></span><span>El filtro no se ajusta a mano. El sistema escucha tus tomas, mide tu rango y el ruido, prueba filtros IIR y FIR y deja fijo el mejor. Así nunca se corta parte de tu silbido.</span></p>
+          <ol class="auto-reasons" id="auto-reasons"></ol>
+          <div class="table-wrap" id="auto-duel-wrap" hidden>
+            <table class="table auto-duel" id="auto-duel"></table>
           </div>
-          <p class="muted small">El filtro activo es el que usan el análisis, la huella y la verificación.</p>
-          <label class="field">
-            <span>Frecuencia de corte inferior f<sub>L</sub>: <b id="fl-val"></b></span>
-            <input type="range" id="fl" min="200" max="3000" step="50">
-          </label>
-          <label class="field">
-            <span>Frecuencia de corte superior f<sub>H</sub>: <b id="fh-val"></b></span>
-            <input type="range" id="fh" min="1500" max="7500" step="50">
-          </label>
-          <div class="grid two tight">
-            <label class="field"><span>Orden IIR (pasa-banda)</span>
-              <select id="iir-order"><option value="2">4 (2 biquads)</option><option value="3">6 (3 biquads)</option><option value="4">8 (4 biquads)</option><option value="5">10 (5 biquads)</option><option value="6">12 (6 biquads)</option></select>
-            </label>
-            <label class="field"><span>Ventana FIR</span>
-              <select id="fir-win"><option value="hamming">Hamming</option><option value="hann">Hann</option><option value="blackman">Blackman</option><option value="rect">Rectangular (Gibbs)</option></select>
-            </label>
-          </div>
-          <label class="field">
-            <span>Coeficientes FIR M: <b id="taps-val"></b></span>
-            <input type="range" id="fir-taps" min="21" max="255" step="2">
-          </label>
+          <details class="explain" id="auto-all-wrap" hidden>
+            <summary>Ver todos los candidatos evaluados</summary>
+            <div class="table-wrap"><table class="table auto-all" id="auto-all"></table></div>
+          </details>
           <div class="filter-summary" id="filter-summary"></div>
           <div class="btn-row">
-            <button type="button" class="btn primary" id="export-h"><span class="ico"></span>Exportar para ESP32 (.h)</button>
+            <button type="button" class="btn primary" id="export-h"><span class="ico"></span>Exportar filtro para ESP32 (.h)</button>
             <button type="button" class="btn ghost" id="copy-coefs"><span class="ico"></span>Copiar coeficientes</button>
-            <button type="button" class="btn link" id="filter-reset">Restablecer</button>
           </div>
         </article>
         <article class="card">
@@ -337,13 +382,38 @@
         </div>
         <div class="btn-row">
           <label class="btn ghost file-btn"><span class="ico"></span>Importar perfil<input type="file" id="import-profile" accept=".json,application/json" multiple hidden></label>
+          <button type="button" class="btn ghost" id="np-open"><span class="ico"></span>Nuevo perfil desde audios</button>
           <button type="button" class="btn ghost" id="demo-profiles">Crear perfiles demo</button>
+          <button type="button" class="btn primary" id="export-esp32" title="perfil.h para el reconocedor autónomo (la ESP32 decide sola, sin la web; hasta 4 perfiles)"><span class="ico"></span>ESP32 autónoma (perfil.h)</button>
         </div>
       </div>
+      <article class="card new-profile" id="new-profile" hidden>
+        <div class="card-head"><h2>Nuevo perfil desde audios</h2><button type="button" class="btn ghost sm" id="np-close">Cerrar</button></div>
+        <p class="muted small">Sube de 3 a 5 audios con el silbido de la <b>misma persona</b> (WAV, MP3, M4A, OGG…). Si un audio dura más de 5 s, se parte en tomas de 5 s. La web analiza cada toma, elige el filtro sola y crea la huella con las 3 mejores.</p>
+        <div class="grid two tight np-top">
+          <label class="field"><span>Nombre de la persona</span><input type="text" id="np-name" maxlength="40" placeholder="Ej. Sofía" autocomplete="off"></label>
+          <label class="dropzone" id="np-drop" tabindex="0"><span class="ico"></span><span><b>Arrastra los audios aquí</b><small>o haz clic para elegirlos (puedes elegir varios)</small></span><input type="file" id="np-files" accept="audio/*" multiple hidden></label>
+        </div>
+        <ol class="takes np-list" id="np-list"></ol>
+        <div class="np-auto" id="np-auto" hidden></div>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="np-create" disabled>Crear perfil</button>
+          <button type="button" class="btn ghost" id="np-clear" disabled>Quitar todos</button>
+        </div>
+      </article>
       <div class="profiles" id="profiles-grid"></div>
+      <article class="card nn-card" id="nn-profiles" hidden>
+        <div class="card-head">
+          <h2><span class="ico" data-icon="brain"></span>Red neuronal de los perfiles</h2>
+          <div class="seg sm nn-pick" role="radiogroup" aria-label="Perfil a mostrar" id="nn-prof-pick"></div>
+        </div>
+        <p class="muted small" id="nn-prof-note"></p>
+        <div class="nn-host" id="nn-prof-net"></div>
+      </article>
       <div class="empty-state" id="profiles-empty">
+        <span class="empty-ico" data-icon="fingerprint"></span>
         <p><b>Todavía no hay perfiles.</b></p>
-        <p>Graba tus 5 tomas en <a href="#grabar">Grabar</a> y pulsa <b>Guardar perfil</b>. También puedes crear los perfiles de demostración (Ana y Beto) para explorar la web.</p>
+        <p>Graba tus 5 tomas en <a href="#grabar">Grabar</a> y pulsa <b>Guardar perfil</b>, o pulsa <b>Nuevo perfil desde audios</b> y sube tus silbidos. También puedes crear los perfiles de demostración (Ana y Beto) para explorar la web.</p>
       </div>
     </section>
 
@@ -356,6 +426,15 @@
             <span>Comparar con</span>
             <select id="verify-profile"></select>
           </label>
+          <div class="field">
+            <span>Modo de identificación</span>
+            <div class="seg wide method-seg" role="radiogroup" aria-label="Modo de identificación" id="verify-method">
+              <button type="button" data-method="filtros" aria-pressed="true"><span class="ico" data-icon="filter"></span>Por filtros</button>
+              <button type="button" data-method="ia" aria-pressed="false"><span class="ico" data-icon="brain"></span>Inteligencia</button>
+              <button type="button" data-method="ambos" aria-pressed="false">Ambos</button>
+            </div>
+            <small class="method-help" id="method-help"></small>
+          </div>
           <label class="field">
             <span>Rigurosidad</span>
             <select id="verify-strict">
@@ -368,6 +447,7 @@
             <button type="button" class="btn record" id="verify-rec"><span class="rec-dot" aria-hidden="true"></span><span class="lbl">Silbar ahora · 5 s</span></button>
             <label class="btn ghost file-btn"><span class="ico"></span>Subir audio<input type="file" id="verify-file" accept="audio/*" hidden></label>
           </div>
+          <button type="button" class="btn live-btn" id="verify-live"><span class="ico" data-icon="live"></span><span class="lbl">Identificar en tiempo real</span></button>
           <div class="rec-progress" id="verify-progress" hidden>
             <div class="rec-count" id="verify-count">3</div>
             <div class="rec-bar"><div class="rec-bar-fill" id="verify-bar"></div></div>
@@ -381,6 +461,29 @@
         </article>
         <article class="card verdict" id="verdict" aria-live="polite"></article>
       </div>
+
+      <article class="card live-id" id="live-id" hidden>
+        <div class="card-head">
+          <h2><span class="live-dot" aria-hidden="true"></span>Identificación en tiempo real</h2>
+          <div class="btn-row">
+            <button type="button" class="btn primary sm" id="live-freeze" disabled>Fijar este silbido y ver el detalle</button>
+            <button type="button" class="btn ghost sm" id="live-stop">Detener</button>
+          </div>
+        </div>
+        <div class="live-id-grid">
+          <div>
+            <div class="plot-host" id="plot-live-id"></div>
+            <p class="muted small">Últimos 5 s, actualizados cada 0,6 s. Los recuadros son los tramos que el sistema reconoce como silbido. Se compara la última frase completa: mientras sigues silbando, el resultado es provisional.</p>
+          </div>
+          <div class="live-side">
+            <div class="live-status" id="live-status"></div>
+            <h3 class="mini-h"><span class="ico" data-icon="filter"></span>Por filtros <small>similitud</small></h3>
+            <div class="bars" id="live-bars-f"></div>
+            <h3 class="mini-h"><span class="ico" data-icon="brain"></span>Inteligencia <small>probabilidad</small></h3>
+            <div class="bars" id="live-bars-ia"></div>
+          </div>
+        </div>
+      </article>
 
       <div id="verify-details" hidden>
         <div class="grid two">
@@ -401,6 +504,30 @@
           </article>
         </div>
         <div class="grid two">
+          <article class="card ai-card" id="ai-card">
+            <div class="card-head"><h2><span class="ico" data-icon="brain"></span>Inteligencia · ¿quién es?</h2></div>
+            <div class="bars" id="ai-bars"></div>
+            <p class="muted small" id="ai-note"></p>
+          </article>
+          <article class="card ai-card" id="ai-why-card">
+            <div class="card-head"><h2>¿En qué se fijó la inteligencia?</h2></div>
+            <div class="bars" id="ai-why"></div>
+            <details class="explain">
+              <summary>¿Cómo funciona la red?</summary>
+              <div id="ai-model"></div>
+            </details>
+          </article>
+        </div>
+        <article class="card nn-card" id="nn-card">
+          <div class="card-head">
+            <h2><span class="ico" data-icon="brain"></span>Red neuronal · ¿de verdad es esa persona?</h2>
+            <div class="seg sm nn-pick" role="radiogroup" aria-label="Neurona de salida a revisar" id="nn-target"></div>
+          </div>
+          <p class="muted small" id="nn-note"></p>
+          <div class="nn-host" id="nn-net"></div>
+          <div id="nn-match"></div>
+        </article>
+        <div class="grid two">
           <article class="card">
             <div class="card-head">
               <h2>Contornos de tono</h2>
@@ -414,17 +541,19 @@
           <article class="card">
             <div class="card-head"><h2>Matriz DTW</h2><div class="card-tools" id="tools-dtw"></div></div>
             <div class="plot-host" id="plot-dtw"></div>
-            <p class="muted small">Cada celda es |prueba<sub>i</sub> − referencia<sub>j</sub>| en semitonos. La línea naranja es el camino de costo mínimo que encuentra el DTW. Si los silbidos son iguales, el camino sigue la diagonal por un "valle" claro.</p>
+            <p class="muted small">Cada celda es |prueba<sub>i</sub> − referencia<sub>j</sub>| en semitonos. La línea cian es el camino de costo mínimo que encuentra el DTW. Si los silbidos son iguales, el camino sigue la diagonal por un "valle" claro.</p>
           </article>
         </div>
         <div class="grid two">
           <article class="card">
             <div class="card-head"><h2>Referencia del perfil</h2><button type="button" class="btn ghost sm" id="play-ref"><span class="ico"></span>Escuchar</button></div>
             <div class="plot-host" id="plot-vref"></div>
+            <p class="muted small">Recuadros numerados = tramos con silbido. La línea cian es el contorno f₀(t) que compara el DTW.</p>
           </article>
           <article class="card">
             <div class="card-head"><h2>Silbido de prueba</h2><button type="button" class="btn ghost sm" id="play-query"><span class="ico"></span>Escuchar</button></div>
             <div class="plot-host" id="plot-vquery"></div>
+            <p class="muted small">Se dibuja con la misma escala de color que la referencia para que se puedan comparar a simple vista.</p>
           </article>
         </div>
         <p class="center"><button type="button" class="btn ghost" id="query-analyze">Ver el análisis completo del silbido de prueba</button></p>
@@ -434,7 +563,7 @@
 
   <footer class="app-footer">
     <p><b>Silbido ID</b> · Proyecto de Procesamiento de Señales II. Todo el procesamiento ocurre en tu navegador: el audio no se envía a ningún servidor.</p>
-    <p class="muted small">Es una demostración académica, no un sistema de seguridad. Alguien que imite bien tu melodía y tu tono podría ser aceptado. Próximo paso: el mismo filtro y la misma detección en un ESP32 con micrófono INMP441 para encender un LED.</p>
+    <p class="muted small">Es una demostración académica, no un sistema de seguridad. Alguien que imite bien tu melodía y tu tono podría ser aceptado. Próximo paso: el mismo filtro y la misma detección en un ESP32 con micrófono INMP441 para encender un LED. <a href="hardware/index.html">Ver el circuito: esquemático, 3D y montaje →</a></p>
   </footer>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

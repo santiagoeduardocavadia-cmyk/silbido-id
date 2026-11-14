@@ -1,11 +1,13 @@
 // Vista 1 · Grabar: micrófono, vista en vivo, 5 tomas, ranking y guardado del perfil.
-import { AudioEngine, resample, decodeFile } from '../audio.js';
+import { AudioEngine, resample, decodeFileAll, splitTakes } from '../audio.js';
+import { Esp32Serial } from '../esp32-serial.js';
+import { createDeviceStatus } from './devstatus.js';
 import { LiveView } from '../ui/live.js';
 import { buildProfile, MIN_VALID_TAKES } from '../dsp/matcher.js';
 import { noteName } from '../dsp/features.js';
 import { synthWhistle, DEMO_PEOPLE } from '../dsp/synth.js';
 import { $, fmt, icons, escapeHtml, floatToB64, encodeWav, download } from '../util.js';
-import { countdown, drawContourSpark, drawWaveSpark, micErrorMessage } from './common.js';
+import { countdown, drawHeatThumb, drawWaveSpark, micErrorMessage } from './common.js';
 
 /**
  * Flujo de grabación reutilizable: arranca el micrófono si hace falta, cuenta 3-2-1,
@@ -49,6 +51,7 @@ export async function recordClip(app, ui) {
 export function initRecord(app) {
   const el = {
     micStart: $('#mic-start'),
+    esp: $('#esp32-connect'),
     select: $('#mic-select'),
     monitor: $('#monitor-toggle'),
     status: $('#mic-status'),
@@ -66,20 +69,89 @@ export function initRecord(app) {
   };
   const recUI = { box: $('#rec-progress'), count: $('#rec-count'), bar: $('#rec-bar'), cancel: $('#rec-cancel'), button: el.recNext };
   el.file.closest('label').querySelector('.ico').innerHTML = icons.upload;
-  const live = new LiveView({ canvas: $('#live-canvas'), meterFill: $('#meter-fill'), meterText: $('#meter-text'), readout: $('#live-readout') });
+  const live = new LiveView({
+    canvas: $('#live-canvas'),
+    meterFill: $('#meter-fill'),
+    meterText: $('#meter-text'),
+    readout: $('#live-readout'),
+    band: $('#live-band'),
+    bandLabel: $('#live-band-label'),
+    peak: $('#live-peak'),
+    peakLabel: $('#live-peak-label'),
+    idle: $('#live-idle'),
+  });
+  const syncBand = () => live.setBand(app.state.filter.fl, app.state.filter.fh);
+  syncBand();
+  app.bus.on('filter-changed', syncBand);
   let recordingSlot = null;
 
   // ---------- micrófono ----------
   function micUI() {
     const on = app.audio.active;
-    el.micStart.innerHTML = `${icons.mic}<span>${on ? 'Apagar micrófono' : 'Activar micrófono'}</span>`;
+    const ext = !!app.audio.externalLabel;
+    el.micStart.innerHTML = `${icons.mic}<span>${on && !ext ? 'Apagar micrófono' : 'Activar micrófono'}</span>`;
     el.micStart.classList.toggle('primary', !on);
     el.micStart.classList.toggle('ghost', on);
-    el.status.textContent = on ? `Activo · ${fmt(app.audio.sampleRate / 1000, 1)} kHz` : 'Apagado';
+    el.esp.querySelector('.lbl').textContent = ext ? 'Desconectar ESP32' : 'Usar ESP32 (USB)';
+    el.esp.classList.toggle('on', ext);
+    el.status.textContent = ext ? `ESP32 · ${app.audio.externalLabel}` : on ? `Activo · ${fmt(app.audio.sampleRate / 1000, 1)} kHz` : 'Apagado';
+    el.status.title = ext ? 'La ESP32 filtra la señal del INMP441 y la manda por USB a 16 kHz' : '';
     el.status.className = `pill ${on ? 'on' : ''}`;
     el.monitor.disabled = !on;
+    if (ext) el.select.disabled = true;
     if (!on) el.monitor.checked = false;
+    if (!esp.connected) dev.refresh();
   }
+
+  // ---------- ESP32 por USB ----------
+  const esp = new Esp32Serial();
+  const dev = createDeviceStatus(app, esp);
+  el.esp.querySelector('.ico').innerHTML = icons.chip;
+  if (!Esp32Serial.supported()) {
+    el.esp.disabled = true;
+    el.esp.title = 'Tu navegador no permite USB serie. Usa Chrome o Edge en el computador.';
+  }
+  async function disconnectEsp(msg) {
+    await esp.disconnect();
+    dev.disconnected();
+    if (app.audio.externalLabel) {
+      app.audio.stopStream();
+      live.detach();
+    }
+    micUI();
+    if (msg) app.toast(msg, 'error');
+  }
+  esp.onClose = () => disconnectEsp('Se perdió la conexión con la ESP32 (¿se desconectó el cable?).');
+  el.esp.addEventListener('click', async () => {
+    if (esp.connected) {
+      await disconnectEsp();
+      return;
+    }
+    el.esp.disabled = true;
+    el.esp.querySelector('.lbl').textContent = 'Conectando…';
+    try {
+      if (app.audio.active) stopMic();
+      dev.connecting();
+      let push = null;
+      const info = await esp.connect((x) => {
+        dev.feed(x);
+        if (push) push(x);
+      });
+      push = await app.audio.startExternal(`${info.filtro}`, info.fs);
+      dev.connected();
+      live.attach(app.audio.analyser);
+      app.audio.setMonitor(el.monitor.checked);
+      app.toast(`ESP32 conectada: filtra con ${info.filtro} y manda el audio por USB. Ya puedes grabar o verificar.`);
+    } catch (e) {
+      await esp.disconnect();
+      dev.disconnected();
+      if (e && e.name === 'NotFoundError') app.toast('No elegiste ningún puerto. Conecta la ESP32 por USB y vuelve a intentar.');
+      else app.toast(e.message || String(e), 'error');
+    } finally {
+      el.esp.disabled = !Esp32Serial.supported();
+      micUI();
+    }
+  });
 
   async function refreshDevices() {
     const list = await app.audio.listInputs();
@@ -119,7 +191,13 @@ export function initRecord(app) {
     micUI();
   }
 
-  el.micStart.addEventListener('click', () => (app.audio.active ? stopMic() : app.startMic(el.select.disabled ? '' : el.select.value)));
+  el.micStart.addEventListener('click', async () => {
+    if (app.audio.externalLabel) {
+      await disconnectEsp();
+      app.startMic('');
+    } else if (app.audio.active) stopMic();
+    else app.startMic(el.select.disabled ? '' : el.select.value);
+  });
   el.select.addEventListener('change', () => app.startMic(el.select.value));
   el.monitor.addEventListener('change', () => app.audio.setMonitor(el.monitor.checked));
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
@@ -153,22 +231,40 @@ export function initRecord(app) {
 
   el.recNext.addEventListener('click', () => recordInto(firstEmpty()));
 
+  // Varios archivos a la vez; un audio largo se parte en tomas de 5 s que llenan los espacios libres.
   el.file.addEventListener('change', async () => {
-    const f = el.file.files[0];
+    const files = Array.from(el.file.files);
     el.file.value = '';
-    if (!f) return;
-    let slot = firstEmpty();
-    if (slot < 0) {
+    if (!files.length) return;
+    if (firstEmpty() < 0) {
       app.toast('Ya tienes 5 tomas. Borra una para subir otra.');
       return;
     }
-    try {
-      const { samples, originalSeconds } = await decodeFile(f, app.FS, app.DUR);
-      setTake(slot, samples, 'archivo');
-      if (originalSeconds > app.DUR + 0.05) app.toast(`El audio dura ${fmt(originalSeconds, 1)} s, así que se usaron los primeros ${app.DUR} s.`);
-    } catch (e) {
-      app.toast(`No se pudo leer el archivo de audio (${e.message || e}).`, 'error');
+    let added = 0;
+    const bad = [];
+    for (const f of files) {
+      try {
+        const x = await decodeFileAll(f, app.FS);
+        const free = app.state.takes.filter((t) => !t).length;
+        for (const chunk of splitTakes(x, app.FS, app.DUR, free)) {
+          const slot = firstEmpty();
+          if (slot < 0) break;
+          app.state.takes[slot] = app.makeItem('take', chunk, { id: `take-${slot}-${Date.now()}-${added}`, slot, source: 'archivo', label: `Toma ${slot + 1}` });
+          added++;
+        }
+      } catch (e) {
+        bad.push(f.name);
+      }
+      if (firstEmpty() < 0) break;
     }
+    if (added) {
+      app.recomputeRanking();
+      app.bus.emit('takes-changed');
+    }
+    app.toast(
+      `${added === 1 ? 'Se cargó 1 toma' : `Se cargaron ${added} tomas`} desde ${files.length === 1 ? 'el archivo' : `${files.length} archivos`}.${bad.length ? ` No se pudo leer: ${bad.join(', ')}.` : ''}`,
+      bad.length && !added ? 'error' : '',
+    );
   });
 
   el.demo.addEventListener('click', () => {
@@ -291,7 +387,7 @@ export function initRecord(app) {
       const c = li.querySelector('canvas');
       if (!t || !c) continue;
       const a = app.analyze(t);
-      if (a.features.valid) drawContourSpark(c, { times: a.frames.times, midi: a.midi, dur: a.duration, segments: a.segments });
+      if (a.features.valid) drawHeatThumb(c, a);
       else drawWaveSpark(c, t.samples);
     }
 

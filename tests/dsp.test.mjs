@@ -6,6 +6,12 @@ import { cwtMorlet, dwt, DB4_LO, DB4_HI } from '../js/dsp/wavelet.js';
 import { analyzeSignal, hzToMidi, noteName } from '../js/dsp/features.js';
 import { dtw, rankTakes, buildProfile, compareToProfile } from '../js/dsp/matcher.js';
 import { synthWhistle, DEMO_PEOPLE } from '../js/dsp/synth.js';
+import { autoTuneFilter } from '../js/dsp/autofilter.js';
+import { profilesToHeader, testAudioHeader } from '../js/esp32.js';
+import { trainModel, predict, explain, aiThreshold } from '../js/dsp/ai.js';
+import { splitTakes } from '../js/audio.js';
+import { FrameParser } from '../js/esp32-serial.js';
+import { designFilter } from '../js/dsp/filters.js';
 
 let fails = 0;
 let passes = 0;
@@ -216,6 +222,109 @@ section('Perfil y verificación (silbidos sintéticos)');
   check('imitador (misma melodía, 2,5 st más agudo y con más soplido) es rechazado', !r.accepted, `D = ${r.D.toFixed(2)}, similitud ${r.similarity.toFixed(1)} %`);
   check('encabezado C para ESP32 generado', toCHeader(design).includes('SILBIDO_SOS[SILBIDO_NUM_SECCIONES][5]'));
   void hzToMidi;
+}
+
+section('Auto-sintonía del filtro');
+{
+  const DEF = { type: 'iir', fl: 1000, fh: 4000, order: 4, taps: 101, win: 'hamming' };
+  for (const who of ['ana', 'beto']) {
+    const takes = [1, 2, 3, 4, 5].map((seed) => synthWhistle(DEMO_PEOPLE[who], { seed }));
+    const r = autoTuneFilter(takes, fs, DEF);
+    const c = r.cfg;
+    check(`${who}: elige un filtro`, r.status === 'ok' && c.auto && ['iir', 'fir'].includes(c.type), `${c.type.toUpperCase()} ${c.fl}–${c.fh} Hz`);
+    check(`${who}: la banda cubre todo el rango silbado`, c.fl < r.survey.lo && c.fh > r.survey.hi, `rango ${r.survey.lo.toFixed(0)}–${r.survey.hi.toFixed(0)} Hz`);
+    check(`${who}: comparó IIR contra FIR con tomas reales`, r.finalists.iir.valid === 5 && r.finalists.fir.valid === 5);
+    check(`${who}: el elegido no corta el rango (caída en bordes < 1 dB)`, r.finalists[r.winner].metrics.edgeDb < 1);
+    check(`${who}: es determinista`, JSON.stringify(autoTuneFilter(takes, fs, DEF).cfg) === JSON.stringify(c));
+  }
+  const noise = new Float32Array(5 * fs);
+  for (let i = 0; i < noise.length; i++) noise[i] = (((i * 2654435761) >>> 0) / 4294967296 - 0.5) * 0.01;
+  check('sin silbido mantiene el filtro provisional', autoTuneFilter([noise], fs, DEF).status === 'no-whistle');
+  check('sin tomas no hace nada', autoTuneFilter([], fs, DEF).status === 'empty');
+}
+
+section('Inteligencia (red neuronal propia)');
+{
+  const DEF = { type: 'iir', fl: 1000, fh: 4000, order: 4, taps: 101, win: 'hamming' };
+  const mk = (person, base) => {
+    const takes = [1, 2, 3, 4, 5].map((i) => synthWhistle(person, { seed: base + i }));
+    const t = autoTuneFilter(takes, fs, DEF);
+    return { ...buildProfile({ name: person.name, analyses: t.analyses, filterCfg: t.cfg, fs }), id: person.name, createdAt: 'x' };
+  };
+  const ana = mk(DEMO_PEOPLE.ana, 100);
+  const beto = mk(DEMO_PEOPLE.beto, 200);
+  const m = trainModel([ana, beto]);
+  check('la red se entrena y reconoce las tomas reales de los perfiles', m.refAccuracy === 1, `${m.arch}, ${m.samples} ejemplos, ${m.ms.toFixed(0)} ms`);
+  check('el entrenamiento es determinista', JSON.stringify(trainModel([ana, beto]).history) === JSON.stringify(m.history));
+  const probOf = (x, p, k) => predict(m, analyzeSignal(x, fs, designFilter(p.filter, fs))).probs[k];
+  const thr = aiThreshold(1);
+  for (const seed of [11, 12, 13]) check(`IA: Ana (toma ${seed}) es Ana`, probOf(synthWhistle(DEMO_PEOPLE.ana, { seed }), ana, 0) >= thr);
+  for (const seed of [21, 22]) check(`IA: Beto (toma ${seed}) es Beto`, probOf(synthWhistle(DEMO_PEOPLE.beto, { seed }), beto, 1) >= thr);
+  for (const seed of [21, 22]) check(`IA: Beto (toma ${seed}) no es Ana`, probOf(synthWhistle(DEMO_PEOPLE.beto, { seed }), ana, 0) < thr);
+  const imit = { ...DEMO_PEOPLE.ana, baseHz: DEMO_PEOPLE.ana.baseHz * 2 ** (2.5 / 12), breath: 0.08, vibratoCents: 35 };
+  for (const seed of [31, 32]) {
+    const p = probOf(synthWhistle(imit, { seed }), ana, 0);
+    check(`IA: el imitador (toma ${seed}) es rechazado`, p < thr, `${(p * 100).toFixed(1)} %`);
+  }
+  const ex = explain(m, analyzeSignal(synthWhistle(DEMO_PEOPLE.ana, { seed: 11 }), fs, designFilter(ana.filter, fs)), 0);
+  check('la explicación reparte el 100 % entre los datos', Math.abs(ex.reduce((s, g) => s + Math.abs(g.contribution), 0) - 1) < 1e-9);
+  check('un solo perfil también entrena (perfil vs desconocido)', trainModel([ana]).refAccuracy === 1);
+}
+
+section('Audios largos');
+{
+  const x = new Float32Array(16000 * 12.3);
+  const parts = splitTakes(x, fs, 5);
+  check('un audio de 12,3 s se parte en 3 tomas de 5 s', parts.length === 3 && parts.every((p) => p.length === 80000));
+  check('un trozo final de menos de 1,5 s se descarta', splitTakes(new Float32Array(16000 * 6), fs, 5).length === 1);
+  check('nunca más tomas que las pedidas', splitTakes(new Float32Array(16000 * 40), fs, 5, 2).length === 2);
+}
+
+section('ESP32 por USB (tramas)');
+{
+  const frame = (seq, vals, status = 0, corrupt = false) => {
+    const n = vals.length;
+    const b = new Uint8Array(6 + 2 * n);
+    b.set([0xa5, 0x5a, seq & 0xff, n, status]);
+    const dv = new DataView(b.buffer);
+    vals.forEach((v, k) => dv.setInt16(5 + 2 * k, v, true));
+    let chk = 0;
+    for (let k = 0; k < 2 * n; k++) chk = (chk + b[5 + k]) & 0xff;
+    b[5 + 2 * n] = corrupt ? (chk + 1) & 0xff : chk;
+    return b;
+  };
+  const got = [];
+  const lines = [];
+  const P = new FrameParser({ onSamples: (x) => got.push(...x), onLine: (l) => lines.push(l) });
+  const vals = Array.from({ length: 160 }, (_, i) => Math.round(10000 * Math.sin(i / 5)));
+  const text = new TextEncoder().encode('{"dispositivo":"silbido-id","fs":16000}\n');
+  const stream = [text, frame(0, vals), new Uint8Array([1, 2, 3, 0xa5, 9]), frame(1, vals, 1), frame(2, vals, 0, true), frame(4, vals)];
+  const all = new Uint8Array(stream.reduce((s, b) => s + b.length, 0));
+  let o = 0;
+  for (const b of stream) {
+    all.set(b, o);
+    o += b.length;
+  }
+  for (let i = 0; i < all.length; i += 37) P.push(all.subarray(i, i + 37)); // llega en pedazos de cualquier tamaño
+  check('lee la línea JSON de información', lines[0] && JSON.parse(lines[0]).fs === 16000);
+  check('recupera 3 tramas válidas aunque lleguen partidas y con basura', P.stats.frames === 3 && got.length === 480);
+  check('descarta la trama con suma de verificación mala', P.stats.bad >= 1);
+  check('cuenta las tramas perdidas por número de secuencia', P.stats.lost === 2, `${P.stats.lost}`);
+  check('las muestras llegan exactas (int16 / 32768)', Math.abs(got[7] - vals[7] / 32768) < 1e-9 && P.stats.clipped === 1);
+}
+
+section('Exportación ESP32');
+{
+  const DEF = { type: 'iir', fl: 1000, fh: 4000, order: 4, taps: 101, win: 'hamming' };
+  const takes = [1, 2, 3, 4, 5].map((seed) => synthWhistle(DEMO_PEOPLE.beto, { seed: 200 + seed }));
+  const tuned = autoTuneFilter(takes, fs, DEF);
+  const p = buildProfile({ name: 'Beto "demo"', analyses: tuned.analyses, filterCfg: tuned.cfg, fs });
+  const h = profilesToHeader([p], fs);
+  check('perfil.h declara PERFILES y NUM_PERFILES', h.includes('silbido::PerfilDef PERFILES[]') && h.includes('NUM_PERFILES'));
+  check('perfil.h escapa el nombre', h.includes('"Beto \\"demo\\""'));
+  check('perfil.h incluye las 3 referencias', /P0_REF2\[\d+\]/.test(h));
+  const t = testAudioHeader(takes[0], [p], { fs });
+  check('prueba_audio.h trae 80000 muestras y el valor esperado', t.includes('PRUEBA_AUDIO[80000]') && t.includes('PRUEBA_ESPERADO[]'));
 }
 
 console.log(`\n${passes} pruebas correctas, ${fails} fallidas`);

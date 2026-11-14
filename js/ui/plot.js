@@ -35,10 +35,17 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/** Paleta secuencial de un solo tono (azul), de la superficie al extremo. */
+/**
+ * Paleta de calor perceptualmente uniforme (tipo "magma"): negro → violeta → naranja → amarillo claro.
+ * Es la misma en tema claro y oscuro: los mapas de calor se ven como una "pantalla" oscura y las
+ * anotaciones (cian, blanco, lima, lavanda) se leen bien sobre ella.
+ */
+export const HEAT_STOPS = ['#05040d', '#1d0f47', '#51127c', '#8a2a81', '#c43c75', '#ee6a5b', '#fba26a', '#fde4a6'];
+
+/** Paleta de calor, del fondo al extremo. */
 export function heatLUT() {
   if (lutCache) return lutCache;
-  const stops = [0, 1, 2, 3, 4, 5].map((i) => hexToRgb(tok(`--heat-${i}`)));
+  const stops = HEAT_STOPS.map(hexToRgb);
   const lut = new Uint8ClampedArray(256 * 3);
   for (let i = 0; i < 256; i++) {
     const t = (i / 255) * (stops.length - 1);
@@ -99,6 +106,10 @@ export class Plot {
     this.opts.x = mergeAxis(defAxis, opts.x);
     this.opts.y = mergeAxis(defAxis, opts.y);
     this.layers = this._emptyLayers();
+    /** Claves resaltadas (el resto se atenúa) y claves ocultas: sirven para las anotaciones. */
+    this.hl = null;
+    this.hidden = new Set();
+    this._chips = [];
 
     this.legendEl = document.createElement('div');
     this.legendEl.className = 'plot-legend';
@@ -134,7 +145,27 @@ export class Plot {
   }
 
   _emptyLayers() {
-    return { heatmap: null, bands: [], lines: [], stems: [], points: [], vlines: [], hlines: [], circles: [], texts: [] };
+    return { heatmap: null, bands: [], boxes: [], lines: [], stems: [], points: [], vlines: [], hlines: [], circles: [], texts: [] };
+  }
+
+  /** Resalta las capas con esas claves (`null` = sin resaltar). El resto se dibuja atenuado. */
+  setHighlight(keys) {
+    this.hl = keys && keys.size ? keys : null;
+    this.invalidate();
+  }
+
+  /** Oculta las capas con esas claves. */
+  setHidden(keys) {
+    this.hidden = new Set(keys || []);
+    this.invalidate();
+  }
+
+  /** Factor de opacidad de una capa según el resaltado; 0 si está oculta. */
+  _k(item) {
+    if (!item || !item.key) return 1;
+    if (this.hidden.has(item.key)) return 0;
+    if (this.hl && !this.hl.has(item.key)) return 0.2;
+    return 1;
   }
 
   setAxes({ x, y } = {}) {
@@ -277,8 +308,10 @@ export class Plot {
     ctx.beginPath();
     ctx.rect(px0, py0, px1 - px0, py1 - py0);
     ctx.clip();
+    this._chips = [];
     this._drawHeatmap(ctx);
     for (const B of this.layers.bands) this._drawBand(ctx, B);
+    for (const B of this.layers.boxes) this._drawBox(ctx, B);
     for (const C of this.layers.circles) {
       ctx.strokeStyle = col(C.color || '--axis');
       ctx.lineWidth = C.width || 1.2;
@@ -298,6 +331,7 @@ export class Plot {
       ctx.textBaseline = T.baseline || 'middle';
       ctx.fillText(T.text, this.X(T.x) + (T.dx || 0), this.Y(T.y) + (T.dy || 0));
     }
+    this._flushChips(ctx);
     ctx.restore();
 
     // Ejes
@@ -353,9 +387,117 @@ export class Plot {
     return axis.scale === 'log' ? logTicks(min, max) : linearTicks(min, max, Math.max(2, target));
   }
 
+  /** Cuadro anotado: recuadro redondeado con relleno suave y una etiqueta (chip). */
+  _drawBox(ctx, B) {
+    const k = this._k(B);
+    if (!k) return;
+    // Si el cuadro llega al borde del área de la gráfica, se mete un poco hacia adentro para que
+    // su contorno (y las esquinas redondeadas) se vea completo y no quede cortado por el recorte.
+    const V = this.view;
+    const m = (B.width ?? 1.6) / 2 + 1;
+    const x0 = Math.max(V.px0 + m, this.X(B.x0));
+    const x1 = Math.min(V.px1 - m, this.X(B.x1));
+    const yTop = Math.max(V.py0 + m, this.Y(B.y1));
+    const yBot = Math.min(V.py1 - m, this.Y(B.y0));
+    const w = x1 - x0;
+    const h = yBot - yTop;
+    if (w <= 0 || h <= 0) return;
+    const c = col(B.color || '--ann-seg');
+    const r = Math.min(B.radius ?? 6, w / 2, h / 2);
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x0, yTop, w, h, r);
+    if (B.fill != null) {
+      ctx.globalAlpha = B.fill * k;
+      ctx.fillStyle = c;
+      ctx.fill();
+    }
+    ctx.globalAlpha = (B.hatch ? 0.7 : 1) * k;
+    ctx.strokeStyle = c;
+    ctx.lineWidth = B.width ?? 1.6;
+    ctx.setLineDash(B.dash || []);
+    ctx.stroke();
+    ctx.restore();
+    if (B.badge != null) this._chips.push({ x: x0, y: yTop, text: String(B.badge), color: c, kind: 'badge', k });
+    if (B.chip && w >= (B.chipMinW ?? 0)) {
+      this._chips.push({
+        x: B.chipAlign === 'center' ? (x0 + x1) / 2 : x0 + (B.badge != null ? 24 : 0),
+        y: B.chipBelow ? yBot + 2 : B.chipInside ? yTop + (B.badge != null ? 3 : 6) : yTop - 3,
+        text: B.chip,
+        color: c,
+        align: B.chipAlign === 'center' ? 'center' : 'left',
+        below: !!B.chipBelow,
+        inside: !!B.chipInside,
+        k,
+      });
+    }
+  }
+
+  /** Dibuja las etiquetas acumuladas evitando que se encimen. */
+  _flushChips(ctx) {
+    const V = this.view;
+    const placed = [];
+    ctx.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.textBaseline = 'middle';
+    // primero las insignias numeradas, después los textos
+    const list = [...this._chips.filter((c) => c.kind === 'badge'), ...this._chips.filter((c) => c.kind !== 'badge')];
+    for (const c of list) {
+      ctx.save();
+      ctx.globalAlpha = c.k;
+      if (c.kind === 'badge') {
+        const rr = 9;
+        const cx = Math.min(V.px1 - rr - 2, Math.max(V.px0 + rr + 2, c.x + rr + 2));
+        const cy = Math.max(V.py0 + rr + 2, c.y - rr - 2);
+        ctx.fillStyle = c.color;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rr, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillStyle = '#0a0612';
+        ctx.font = '700 11px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(c.text, cx, cy + 0.5);
+        placed.push({ x0: cx - rr, x1: cx + rr, y0: cy - rr, y1: cy + rr });
+        ctx.restore();
+        continue;
+      }
+      const padX = 7;
+      const h = 20;
+      const tw = ctx.measureText(c.text).width;
+      const w = tw + padX * 2;
+      let x = c.align === 'right' ? c.x - w : c.align === 'center' ? c.x - w / 2 : c.x;
+      x = Math.max(V.px0 + 4, Math.min(V.px1 - w - 4, x));
+      let y = c.below || c.inside ? c.y : c.y - h;
+      y = Math.max(V.py0 + 3, Math.min(V.py1 - h - 3, y));
+      const hits = (yy) => placed.some((p) => x < p.x1 + 3 && x + w > p.x0 - 3 && yy < p.y1 + 3 && yy + h > p.y0 - 3);
+      let guard = 0;
+      const dir = c.below || c.inside ? 1 : -1;
+      while (hits(y) && guard++ < 12) {
+        y += dir * (h + 3);
+        if (y < V.py0 + 3 || y > V.py1 - h - 3) {
+          y = Math.max(V.py0 + 3, Math.min(V.py1 - h - 3, y));
+          break;
+        }
+      }
+      ctx.fillStyle = 'rgba(8, 6, 18, 0.82)';
+      ctx.strokeStyle = c.color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#f6f4ff';
+      ctx.textAlign = 'left';
+      ctx.fillText(c.text, x + padX, y + h / 2 + 0.5);
+      placed.push({ x0: x, x1: x + w, y0: y, y1: y + h });
+      ctx.restore();
+    }
+  }
+
   _drawBand(ctx, B) {
+    const k = this._k(B);
+    if (!k) return;
     ctx.fillStyle = col(B.color || '--series-1');
-    ctx.globalAlpha = B.alpha ?? 0.1;
+    ctx.globalAlpha = (B.alpha ?? 0.1) * k;
     if (B.y0 != null) {
       const y0 = this.Y(B.y1);
       ctx.fillRect(this.view.px0, y0, this.view.px1 - this.view.px0, this.Y(B.y0) - y0);
@@ -364,6 +506,10 @@ export class Plot {
       ctx.fillRect(x0, this.view.py0, this.X(B.x1) - x0, this.view.py1 - this.view.py0);
     }
     ctx.globalAlpha = 1;
+    if (B.chip) {
+      const y = B.y0 != null ? (B.chipAt === 'top' ? this.Y(B.y1) : this.Y(B.y0)) : this.view.py0;
+      this._chips.push({ x: B.chipAlign === 'right' ? this.view.px1 - 6 : this.view.px0 + 6, y, text: B.chip, color: col(B.color), align: B.chipAlign || 'left', inside: B.chipAt === 'top', below: B.chipAt !== 'top', k });
+    }
     if (B.label) {
       ctx.font = '11px system-ui, sans-serif';
       ctx.fillStyle = tok('--text-muted');
@@ -374,15 +520,19 @@ export class Plot {
   }
 
   _drawVLine(ctx, V) {
+    const k = this._k(V);
+    if (!k) return;
     const x = Math.round(this.X(V.x)) + 0.5;
     ctx.strokeStyle = col(V.color || '--text-muted');
     ctx.lineWidth = V.width || 1;
+    ctx.globalAlpha = k;
     ctx.setLineDash(V.dash === false ? [] : V.dash || [4, 4]);
     ctx.beginPath();
     ctx.moveTo(x, this.view.py0);
     ctx.lineTo(x, this.view.py1);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
     if (V.label) {
       ctx.font = '11px system-ui, sans-serif';
       ctx.fillStyle = tok('--text-secondary');
@@ -393,15 +543,22 @@ export class Plot {
   }
 
   _drawHLine(ctx, H) {
+    const k = this._k(H);
+    if (!k) return;
     const y = Math.round(this.Y(H.y)) + 0.5;
     ctx.strokeStyle = col(H.color || '--text-muted');
     ctx.lineWidth = H.width || 1;
+    ctx.globalAlpha = k;
     ctx.setLineDash(H.dash === false ? [] : H.dash || [4, 4]);
     ctx.beginPath();
     ctx.moveTo(this.view.px0, y);
     ctx.lineTo(this.view.px1, y);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    if (H.chip) {
+      this._chips.push({ x: H.chipAlign === 'right' ? this.view.px1 - 6 : this.view.px0 + 6, y, text: H.chip, color: col(H.color), align: H.chipAlign || 'left', below: !!H.chipBelow, k });
+    }
     if (H.label) {
       ctx.font = '11px system-ui, sans-serif';
       ctx.fillStyle = tok('--text-secondary');
@@ -414,12 +571,23 @@ export class Plot {
   _drawLine(ctx, L) {
     const n = L.y.length;
     if (!n) return;
+    const k = this._k(L);
+    if (!k) return;
     const getX = L.x ? (i) => L.x[i] : (i) => L.x0 + i * L.dx;
-    ctx.strokeStyle = col(L.color);
-    ctx.lineWidth = L.width || 2;
-    ctx.globalAlpha = L.alpha ?? 1;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
+    if (L.casing) {
+      // contorno oscuro bajo la línea para que se lea sobre el mapa de calor
+      this._strokeLine(ctx, L, getX, 'rgba(6, 4, 16, 0.85)', (L.width || 2) + 3.2, 0.9 * k);
+    }
+    this._strokeLine(ctx, L, getX, col(L.color), L.width || 2, (L.alpha ?? 1) * k);
+  }
+
+  _strokeLine(ctx, L, getX, color, width, alpha) {
+    const n = L.y.length;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.globalAlpha = alpha;
     ctx.setLineDash(L.dash || []);
     const V = this.view;
     const pxw = V.px1 - V.px0;

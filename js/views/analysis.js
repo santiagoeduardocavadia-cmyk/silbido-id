@@ -4,16 +4,21 @@ import { spectrum, toDb } from '../dsp/fft.js';
 import { stft, dbRange } from '../dsp/stft.js';
 import { cwtMorlet, dwt } from '../dsp/wavelet.js';
 import { noteName, midiToHz } from '../dsp/features.js';
+import { buildAnnotations, annotationTip, featureCards, keyIcon } from '../ui/annotate.js';
 import { $, $$, fmt, fmtHz, fmtFreqTick, icons, nextFrame, encodeWav, download, escapeHtml, slug } from '../util.js';
 import { timeAxis, freqAxis, noteAxis, midiRange, barRow } from './common.js';
 
 export function initAnalysis(app) {
+  // Los perfiles se analizan con el filtro que la auto-sintonía eligió para ellos; las tomas, con el actual.
+  const cfgOf = (item) => (item && item.kind === 'profile' ? item.profile.filter : app.state.filter);
   const el = {
     chips: $('#source-chips'),
     empty: $('#analysis-empty'),
     content: $('#analysis-content'),
     status: $('#analysis-status'),
-    tiles: $('#feature-tiles'),
+    featGrid: $('#feat-grid'),
+    annotSig: $('#annot-sig'),
+    annotReset: $('#annot-reset'),
     playO: $('#an-play-orig'),
     playF: $('#an-play-filt'),
     wav: $('#an-wav'),
@@ -23,7 +28,7 @@ export function initAnalysis(app) {
     stftContour: $('#stft-contour'),
     stftInfo: $('#stft-info'),
     w0: $('#cwt-w0'),
-    sigSeg: $('#tab-analisis .seg'),
+    sigSeg: $('#cwt-sig'),
     dwtBars: $('#dwt-bars'),
     dwtPlots: $('#dwt-plots'),
   };
@@ -34,11 +39,26 @@ export function initAnalysis(app) {
   let zoomCenter = null;
   let currentId = null;
   let sig = 'y';
+  let annotSig = 'y';
+  let annotInfo = [];
+  let annotCompact = false;
+  const hiddenLayers = new Set();
   let dirty = true;
   let token = 0;
   let cur = null; // { item, a, src }
 
   const P = {
+    annot: new Plot($('#plot-annot'), {
+      height: 400,
+      margin: { t: 14 },
+      x: timeAxis(),
+      y: freqAxis(),
+      crosshair: 'xy',
+      colorbar: { label: 'dB' },
+      extraTip: (p) => annotationTip(annotInfo, p.x, p.y),
+      ariaLabel: 'Mapa de calor del silbido con los segmentos, el contorno de tono y la banda del filtro marcados',
+      name: 'mapa-calor-anotado',
+    }),
     time: new Plot($('#plot-time'), {
       height: 220,
       x: timeAxis(),
@@ -74,6 +94,10 @@ export function initAnalysis(app) {
       name: 'escalograma-cwt',
     }),
   };
+  new ResizeObserver(() => {
+    if (cur && P.annot.wrap.clientWidth > 0 && (P.annot.wrap.clientWidth < 560) !== annotCompact) drawAnnot();
+  }).observe(P.annot.wrap);
+  addExportButtons($('#tools-annot'), P.annot, 'mapa-de-calor', { csv: false });
   addExportButtons($('#tools-time'), P.time, 'senal-tiempo', { csv: false });
   addExportButtons($('#tools-spec'), P.spec, 'espectro');
   addExportButtons($('#tools-contour'), P.contour, 'contorno');
@@ -159,12 +183,16 @@ export function initAnalysis(app) {
     el.content.hidden = false;
     const src = srcs.find((s) => s.id === currentId);
     el.status.textContent = 'Analizando…';
+    el.status.classList.add('busy');
     await nextFrame();
     if (my !== token) return;
-    const a = app.analyze(src.item);
+    const a = app.analyze(src.item, cfgOf(src.item));
     cur = { item: src.item, a, src };
-    renderTiles();
+    renderFeatures();
+    drawAnnot();
     if (zoomCenter == null) zoomCenter = defaultZoom(a);
+    await nextFrame();
+    if (my !== token) return;
     drawTime();
     drawZoom();
     drawSpectrum();
@@ -177,7 +205,9 @@ export function initAnalysis(app) {
     if (my !== token) return;
     drawWavelets();
     const d = a.design;
-    el.status.textContent = `${src.label} · filtro ${d.name}, ${fmt(d.fl, 0)}–${fmt(d.fh, 0)} Hz · fs = ${fmt(app.FS, 0)} Hz`;
+    const f = a.features;
+    el.status.classList.remove('busy');
+    el.status.textContent = `${src.label} · filtro ${d.name}, ${fmt(d.fl, 0)}–${fmt(d.fh, 0)} Hz · fs = ${fmt(app.FS, 0)} Hz · nivel pico ${fmt(f.peakDb, 1)} dBFS${f.clipped ? ' (saturada: aléjate un poco)' : f.peakDb < -40 ? ' (muy bajo: acércate al micrófono)' : ''}`;
   }
 
   function defaultZoom(a) {
@@ -187,25 +217,82 @@ export function initAnalysis(app) {
     return (best.start + best.end) / 2;
   }
 
-  function renderTiles() {
+  /** Tarjetas "qué mide cada marca": enlazadas con los recuadros del mapa de calor. */
+  function renderFeatures() {
     const { a } = cur;
-    const f = a.features;
-    const tile = (label, value, sub = '') => `<div class="tile"><div class="t-label">${label}</div><div class="t-value">${value}</div><div class="t-sub">${sub}</div></div>`;
-    if (!f.valid) {
-      el.tiles.innerHTML =
-        tile('Resultado', 'Sin silbido', 'No hay al menos 0,3 s con un tono claro en la banda del filtro') +
-        tile('Nivel pico', `${fmt(f.peakDb, 1)} dBFS`, f.peakDb < -40 ? 'Muy bajo: acércate al micrófono' : 'Nivel de la grabación');
-      return;
-    }
-    el.tiles.innerHTML = [
-      tile('Tono medio', `${fmt(f.pitchHz, 0)} Hz`, `${noteName(f.pitchMidi)} · MIDI ${fmt(f.pitchMidi, 1)}`),
-      tile('Rango', `${fmt(f.rangeSt, 1)} st`, `${noteName(f.pitchLow)} → ${noteName(f.pitchHigh)}`),
-      tile('Duración con silbido', `${fmt(f.durVoiced, 2)} s`, `${f.segments} segmento${f.segments === 1 ? '' : 's'}`),
-      tile('Pureza tonal', `${fmt(f.purity * 100, 0)} %`, 'energía concentrada en el pico'),
-      tile('SNR en la banda', `${fmt(f.snrDb, 1)} dB`, 'tono frente a ruido'),
-      tile('Estabilidad', `${fmt(f.jitterCents, 1)} cents`, 'variación entre tramas de 10 ms'),
-      tile('Nivel pico', `${fmt(f.peakDb, 1)} dBFS`, f.clipped ? 'saturada: aléjate un poco' : 'sin saturación'),
-    ].join('');
+    const cards = featureCards(a);
+    const note = a.features.valid
+      ? ''
+      : `<p class="muted small" style="grid-column: 1 / -1; margin: 0">No se detectó un silbido claro (hacen falta al menos 0,3 s con un tono definido dentro de la banda del filtro). Prueba acercarte al micrófono o ampliar la banda en Filtro.</p>`;
+    el.featGrid.innerHTML =
+      note +
+      cards
+        .map(
+          (c) => `<button type="button" class="feat" style="--c: var(${c.color})" data-layers="${c.layers.join(' ')}" aria-pressed="${!hiddenLayers.has(c.layers[0])}" title="Clic para mostrar u ocultar en el mapa">
+            <span class="feat-key">${keyIcon(c.shape)}</span>
+            <span class="feat-body"><span class="feat-label">${c.label}</span><span class="feat-value">${c.value}</span><span class="feat-note">${c.note}</span></span>
+          </button>`,
+        )
+        .join('');
+  }
+
+  function syncFeatState() {
+    for (const b of el.featGrid.querySelectorAll('.feat')) b.setAttribute('aria-pressed', String(!hiddenLayers.has(b.dataset.layers.split(' ')[0])));
+    P.annot.setHidden(hiddenLayers);
+  }
+
+  const layersOf = (btn) => new Set(btn.dataset.layers.split(' '));
+  el.featGrid.addEventListener('mouseover', (e) => {
+    const b = e.target.closest('.feat');
+    if (b) P.annot.setHighlight(layersOf(b));
+  });
+  el.featGrid.addEventListener('mouseout', (e) => {
+    if (!e.target.closest('.feat')) return;
+    const next = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.feat') : null;
+    P.annot.setHighlight(next ? layersOf(next) : null);
+  });
+  el.featGrid.addEventListener('focusin', (e) => {
+    const b = e.target.closest('.feat');
+    if (b) P.annot.setHighlight(layersOf(b));
+  });
+  el.featGrid.addEventListener('focusout', () => P.annot.setHighlight(null));
+  el.featGrid.addEventListener('click', (e) => {
+    const b = e.target.closest('.feat');
+    if (!b) return;
+    const k = b.dataset.layers.split(' ')[0];
+    if (hiddenLayers.has(k)) hiddenLayers.delete(k);
+    else hiddenLayers.add(k);
+    syncFeatState();
+  });
+  el.annotReset.addEventListener('click', () => {
+    hiddenLayers.clear();
+    syncFeatState();
+  });
+  el.annotSig.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-sig]');
+    if (!b) return;
+    annotSig = b.dataset.sig;
+    for (const x of $$('button', el.annotSig)) x.setAttribute('aria-pressed', String(x === b));
+    drawAnnot();
+  });
+
+  function drawAnnot() {
+    if (!cur) return;
+    const { item, a } = cur;
+    const dk = app.designKey(cfgOf(item));
+    const S = viz(item, `${dk}|astft|${annotSig}`, () => stft(annotSig === 'y' ? a.y : a.x, app.FS, { N: 512, overlap: 0.875, win: 'hann', fmax: 8000 }));
+    const range = dbRange(S.data, annotSig === 'y' ? 58 : 66);
+    const d = a.design;
+    // Filtrada: se acerca a la banda de interés. Original: se ve todo para notar lo que el filtro descarta.
+    const ymin = annotSig === 'y' ? Math.max(0, Math.floor((d.fl * 0.55) / 100) * 100) : 0;
+    const ymax = annotSig === 'y' ? Math.min(8000, Math.ceil((d.fh * 1.45) / 100) * 100) : 8000;
+    // En pantallas estrechas las etiquetas largas estorban: quedan solo los números y las tarjetas de abajo
+    annotCompact = P.annot.wrap.clientWidth < 560;
+    const { layers, info } = buildAnnotations(a, { fmax: 8000, compact: annotCompact });
+    annotInfo = info;
+    P.annot.setAxes({ x: { max: a.duration }, y: { min: ymin, max: ymax } });
+    P.annot.set({ heatmap: { ...S, vmin: range.vmin, vmax: range.vmax }, ...layers });
+    P.annot.setHidden(hiddenLayers);
   }
 
   function drawTime() {
@@ -250,7 +337,7 @@ export function initAnalysis(app) {
 
   function drawSpectrum() {
     const { item, a } = cur;
-    const dk = app.designKey(app.state.filter);
+    const dk = app.designKey(cfgOf(item));
     const sp = viz(item, `${dk}|spec`, () => {
       const so = spectrum(a.x, app.FS);
       const sf = spectrum(a.y, app.FS);
@@ -295,14 +382,14 @@ export function initAnalysis(app) {
     const N = Number(el.stftN.value);
     const ov = Number(el.stftOv.value);
     const win = el.stftWin.value;
-    const dk = app.designKey(app.state.filter);
+    const dk = app.designKey(cfgOf(item));
     const S = viz(item, `${dk}|stft|${N}|${ov}|${win}`, () => {
       const so = stft(a.x, app.FS, { N, overlap: ov, win, fmax: 8000 });
       const sf = stft(a.y, app.FS, { N, overlap: ov, win, fmax: 8000 });
       return { so, sf, range: dbRange(so.data, 65) };
     });
     const f0 = Float32Array.from(a.midi, (m) => (Number.isFinite(m) ? midiToHz(m) : NaN));
-    const overlay = el.stftContour.checked && a.features.valid ? [{ x: a.frames.times, y: f0, color: '--series-2', width: 1.6, label: 'f₀(t)', tip: (v) => fmtHz(v) }] : [];
+    const overlay = el.stftContour.checked && a.features.valid ? [{ x: a.frames.times, y: f0, color: '--ann-f0', width: 1.8, casing: true, label: 'f₀(t)', tip: (v) => fmtHz(v) }] : [];
     for (const [plot, s] of [
       [P.stftO, S.so],
       [P.stftF, S.sf],
@@ -318,7 +405,7 @@ export function initAnalysis(app) {
     if (!cur) return;
     const { item, a } = cur;
     const w0 = Number(el.w0.value);
-    const dk = app.designKey(app.state.filter);
+    const dk = app.designKey(cfgOf(item));
     const signal = sig === 'y' ? a.y : a.x;
     const C = viz(item, `${dk}|cwt|${sig}|${w0}`, () => cwtMorlet(signal, app.FS, { fmin: 250, fmax: 7000, nScales: 72, w0 }));
     const r = dbRange(C.data, 60);

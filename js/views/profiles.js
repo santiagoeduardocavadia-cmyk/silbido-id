@@ -3,15 +3,21 @@ import { buildProfile } from '../dsp/matcher.js';
 import { analyzeSignal, noteName } from '../dsp/features.js';
 import { synthWhistle, DEMO_PEOPLE } from '../dsp/synth.js';
 import { isValidProfile, normalizeProfile, DEFAULT_FILTER } from '../store.js';
-import { designFilter } from '../dsp/filters.js';
+import { designFilter, toCHeader } from '../dsp/filters.js';
+import { autoTuneFilter } from '../dsp/autofilter.js';
+import { profilesToHeader } from '../esp32.js';
+import { initNewProfile } from './newprofile.js';
+import { forwardDetail, profileEmbedding, embed } from '../dsp/ai.js';
+import { renderNetwork } from '../ui/nnview.js';
 import { $, fmt, icons, escapeHtml, download, slug, formatDate, floatToB64 } from '../util.js';
-import { drawContourSpark } from './common.js';
+import { drawContourSpark, drawHeatThumb } from './common.js';
 
 export function makeDemoProfile(person, fs, dur, seedBase) {
-  const cfg = { ...DEFAULT_FILTER };
-  const design = designFilter(cfg, fs);
   const samples = [1, 2, 3, 4, 5].map((i) => synthWhistle(person, { fs, dur, seed: seedBase + i }));
-  const analyses = samples.map((x) => analyzeSignal(x, fs, design));
+  // El filtro de cada perfil lo elige la auto-sintonía con sus propias tomas.
+  const tuned = autoTuneFilter(samples, fs, DEFAULT_FILTER);
+  const cfg = tuned.cfg;
+  const analyses = tuned.analyses || samples.map((x) => analyzeSignal(x, fs, designFilter(cfg, fs)));
   const profile = buildProfile({ name: person.name, analyses, filterCfg: cfg, fs });
   profile.bestAudio = floatToB64(samples[profile.bestTake - 1]);
   profile.demo = true;
@@ -24,8 +30,23 @@ export function initProfiles(app) {
     empty: $('#profiles-empty'),
     import: $('#import-profile'),
     demo: $('#demo-profiles'),
+    esp32: $('#export-esp32'),
   };
   el.import.closest('label').querySelector('.ico').innerHTML = icons.upload;
+  el.esp32.querySelector('.ico').innerHTML = icons.chip;
+
+  function exportEsp32(list) {
+    if (!list.length) {
+      app.toast('Primero crea o importa un perfil.');
+      return;
+    }
+    download('perfil.h', profilesToHeader(list.slice(0, 4), app.FS), 'text/x-c');
+    app.toast(
+      `perfil.h descargado con ${Math.min(4, list.length)} perfil(es)${list.length > 4 ? ' (el firmware admite 4)' : ''}. Es para el reconocedor autónomo: reemplaza el de esp32/reconocedor_autonomo/.`,
+    );
+  }
+  el.esp32.addEventListener('click', () => exportEsp32(app.state.profiles));
+  initNewProfile(app);
 
   function render() {
     const list = app.state.profiles;
@@ -41,7 +62,7 @@ export function initProfiles(app) {
               <div><h2>${escapeHtml(p.name)}</h2><small>${formatDate(p.createdAt)}${p.demo ? ' · demo' : ''}</small></div>
             </div>
           </div>
-          <canvas class="profile-spark" aria-label="Contorno de tono de la mejor toma" role="img"></canvas>
+          <canvas class="profile-spark" aria-label="Mapa de calor de la mejor toma, con los tramos de silbido y el contorno de tono" role="img"></canvas>
           <dl class="kv">
             <div><dt>Tono</dt><dd>${fmt(s.pitchHz, 0)} Hz</dd></div>
             <div><dt>Nota</dt><dd>${noteName(s.pitchMidi)}</dd></div>
@@ -56,6 +77,8 @@ export function initProfiles(app) {
             <button type="button" class="btn ghost sm" data-act="play" ${p.bestAudio ? '' : 'disabled'}>${icons.play}Escuchar</button>
             <button type="button" class="btn ghost sm" data-act="analyze" ${p.bestAudio ? '' : 'disabled'}>${icons.search}Analizar</button>
             <button type="button" class="btn ghost sm" data-act="export">${icons.download}Exportar</button>
+            <button type="button" class="btn ghost sm" data-act="nn" title="Ver cómo la red neuronal reconoce a esta persona">${icons.brain}Red neuronal</button>
+            <button type="button" class="btn ghost sm" data-act="esp32" title="filtro.h con el filtro de esta persona, para que la ESP32 filtre el micrófono">${icons.chip}Filtro ESP32</button>
             <button type="button" class="btn ghost sm" data-act="delete" aria-label="Eliminar perfil de ${escapeHtml(p.name)}">${icons.trash}</button>
           </div>
         </article>`;
@@ -63,9 +86,18 @@ export function initProfiles(app) {
       .join('');
     for (const card of el.grid.querySelectorAll('.profile-card')) {
       const p = list.find((x) => x.id === card.dataset.id);
+      const canvas = card.querySelector('canvas');
+      try {
+        if (p.bestAudio) {
+          drawHeatThumb(canvas, app.analyze(app.profileItem(p), p.filter), { crop: true });
+          continue;
+        }
+      } catch {
+        /* sin audio utilizable: se dibuja solo el contorno */
+      }
       const c = p.refs[0].contour;
       const times = c.map((_, i) => i * 0.02);
-      drawContourSpark(card.querySelector('canvas'), { times, midi: c, dur: Math.max(0.2, c.length * 0.02) });
+      drawContourSpark(canvas, { times, midi: c, dur: Math.max(0.2, c.length * 0.02) });
     }
   }
 
@@ -85,6 +117,13 @@ export function initProfiles(app) {
       app.switchTab('analisis');
     } else if (act === 'export') {
       download(`silbido-${slug(p.name)}.json`, JSON.stringify(p, null, 1), 'application/json');
+    } else if (act === 'nn') {
+      nnSel = p.id;
+      renderNNProfiles();
+      $('#nn-profiles').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (act === 'esp32') {
+      download('filtro.h', toCHeader(designFilter(p.filter, app.FS)), 'text/x-c');
+      app.toast(`filtro.h de ${p.name} descargado (${p.filter.type === 'fir' ? 'FIR' : 'IIR'} ${p.filter.fl}–${p.filter.fh} Hz). Reemplaza el de esp32/silbido_id/ y vuelve a subir el sketch.`);
     } else if (act === 'delete') {
       if (!confirm(`¿Eliminar el perfil de "${p.name}" de este navegador? Si no lo exportaste, no se puede recuperar.`)) return;
       app.state.profiles = app.state.profiles.filter((x) => x.id !== id);
@@ -142,6 +181,44 @@ export function initProfiles(app) {
     }
   });
 
+  // ---------- red neuronal de los perfiles ----------
+  let nnSel = null;
+  let nnTimer = 0;
+  function renderNNProfiles() {
+    const card = $('#nn-profiles');
+    const ps = app.state.profiles;
+    card.hidden = !ps.length;
+    if (!ps.length || app.state.tab !== 'perfiles') return;
+    if (!app.modelReady()) {
+      $('#nn-prof-note').textContent = 'Entrenando la red neuronal con los perfiles…';
+      $('#nn-prof-net').innerHTML = '';
+      clearTimeout(nnTimer);
+      nnTimer = setTimeout(() => {
+        app.getModel();
+        renderNNProfiles();
+      }, 40);
+      return;
+    }
+    const m = app.getModel();
+    let k = ps.findIndex((p) => p.id === nnSel);
+    if (k < 0) k = 0;
+    const p = ps[k];
+    const det = forwardDetail(m, profileEmbedding(p));
+    renderNetwork($('#nn-prof-net'), m, det, { target: k, ok: det.p[k] >= 0.6 });
+    const rec = p.refs.map((r) => forwardDetail(m, embed({ ...r.features, contour: r.contour })).p[k] * 100);
+    const name = escapeHtml(p.name);
+    $('#nn-prof-note').innerHTML = `Cada perfil tiene su propia <b>neurona de salida</b>. Aquí entra a la red la huella típica de <b>${name}</b> (el promedio de sus ${p.refs.length} tomas de referencia) y su neurona marca <b>${fmt(det.p[k] * 100, 0)} %</b>. Sus tomas reales, una por una, salen entre ${fmt(Math.min(...rec), 0)} % y ${fmt(Math.max(...rec), 0)} %. La red se entrenó con ${m.samples} ejemplos (${m.arch}) en ${fmt(m.ms, 0)} ms.`;
+    $('#nn-prof-pick').innerHTML = ps.map((q, i) => `<button type="button" data-id="${escapeHtml(q.id)}" aria-pressed="${i === k}">${escapeHtml(q.name)}</button>`).join('');
+  }
+  $('#nn-prof-pick').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-id]');
+    if (!b) return;
+    nnSel = b.dataset.id;
+    renderNNProfiles();
+  });
+  app.bus.on('tab-shown', (name) => name === 'perfiles' && renderNNProfiles());
+
   app.bus.on('profiles-changed', render);
+  app.bus.on('profiles-changed', renderNNProfiles);
   app.bus.on('theme-changed', render);
 }

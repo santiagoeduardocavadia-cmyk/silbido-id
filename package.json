@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "node tests/dsp.test.mjs",
-    "start": "node scripts/serve.mjs 8000"
+    "start": "node scripts/serve.mjs 8000",
+    "esp32": "node scripts/esp32-perfiles.mjs",
+    "esp32:filtro": "node scripts/esp32-filtro.mjs"
   }
 }
