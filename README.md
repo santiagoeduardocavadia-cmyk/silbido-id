@@ -112,6 +112,8 @@ tests/dsp.test.mjs    pruebas: FFT vs DFT, Butterworth vs fórmula analógica, P
 
 🎤 **Alternativa con micrófono comercial** (módulo de sonido + amplificador LM358, montaje en baquela): [`hardware/electret.html`](hardware/electret.html) y firmware `esp32/silbido_adc`.
 
+🚨 **Alarma antirrobo para el celular**: armas y desarmas con dos silbidos que reconoce la ESP32 (módulo de sonido + LM358) y llegan por Bluetooth a [`alarma.html`](alarma.html), que suena si alguien levanta el celular o lo desconecta. Guía en [`esp32/README.md`](esp32/README.md#alarma_silbido-alarma-antirrobo-para-el-celular). Simulador: `alarma.html?demo=1`.
+
 📘 **Informe técnico completo** (hardware, I2S, teoría de los filtros, auto-sintonía, DTW, red neuronal): [`docs/informe-tecnico.md`](docs/informe-tecnico.md).
 
 ### Auto-sintonía del filtro

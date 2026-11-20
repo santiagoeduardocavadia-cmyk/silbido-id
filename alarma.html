@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Alarma · Silbido ID</title>
+  <meta name="description" content="Alarma antirrobo para el celular: se arma y se desarma con tus silbidos, reconocidos por la ESP32 y enviados por Bluetooth.">
+  <meta name="theme-color" content="#080a10">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23dc2626'/%3E%3Cpath d='M16 6a6 6 0 0 0-6 6v5l-2 4h16l-2-4v-5a6 6 0 0 0-6-6zM13 23a3 3 0 0 0 6 0' fill='none' stroke='white' stroke-width='2.4' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/alarma.css">
+  <script>
+    try { var t = localStorage.getItem('silbido-id:theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body class="al-body">
+  <header class="al-header">
+    <a class="al-back" href="./" aria-label="Volver a Silbido ID">← Silbido ID</a>
+    <h1>Alarma por silbidos</h1>
+  </header>
+
+  <main class="al-main">
+    <section class="al-estado" id="estado" aria-live="assertive">
+      <div class="al-estado-titulo" id="estado-titulo">Desarmada</div>
+      <div class="al-estado-sub" id="estado-sub">Conecta la ESP32 para empezar</div>
+    </section>
+
+    <div class="al-chips" aria-label="Estado de los sensores">
+      <span class="al-chip" id="chip-ble"><i></i>Bluetooth</span>
+      <span class="al-chip" id="chip-mov"><i></i>Movimiento</span>
+      <span class="al-chip" id="chip-carga"><i></i>Cargador</span>
+      <span class="al-chip" id="chip-pantalla"><i></i>Pantalla</span>
+    </div>
+
+    <div class="al-acciones">
+      <button type="button" class="al-btn primario" id="btn-conectar">Conectar con la ESP32</button>
+      <button type="button" class="al-btn" id="btn-pantalla">Pantalla completa</button>
+      <button type="button" class="al-btn" id="btn-probar">Probar sirena (1 s)</button>
+    </div>
+
+    <p class="al-aviso" id="aviso" hidden></p>
+
+    <section class="al-card al-demo" id="demo" hidden>
+      <h2>Simulador (sin ESP32)</h2>
+      <p>Los mensajes simulados pasan por la misma verificación de firma que los de la ESP32.</p>
+      <div class="al-acciones">
+        <button type="button" class="al-btn" data-demo="armar">ESP32: ARMAR</button>
+        <button type="button" class="al-btn" data-demo="desarmar">ESP32: DESARMAR</button>
+        <button type="button" class="al-btn" data-demo="falso">Mensaje falso</button>
+        <button type="button" class="al-btn" data-demo="repetir">Repetir el último</button>
+        <button type="button" class="al-btn" data-demo="mover">Levantar el celular</button>
+        <button type="button" class="al-btn" data-demo="cargador">Desconectar el cargador</button>
+      </div>
+    </section>
+
+    <details class="al-card" id="ajustes">
+      <summary>Ajustes</summary>
+      <label class="al-campo">
+        <span>Secreto (el mismo de <code>secreto.h</code> en la ESP32)</span>
+        <span class="al-fila">
+          <input type="password" id="secreto" autocomplete="off" spellcheck="false" placeholder="mínimo 16 caracteres">
+          <button type="button" class="al-btn" id="btn-secreto">Guardar</button>
+        </span>
+      </label>
+      <label class="al-campo">
+        <span>Sensibilidad al movimiento</span>
+        <select id="sensibilidad">
+          <option value="0.8">Alta (cualquier toque)</option>
+          <option value="1.5" selected>Normal</option>
+          <option value="2.5">Baja (mesa que vibra)</option>
+        </select>
+      </label>
+      <label class="al-check"><input type="checkbox" id="usar-cargador" checked> Sonar si desconectan el cargador</label>
+      <p class="al-nota">Contador de mensajes aceptados: <b id="contador">0</b>.
+        <button type="button" class="al-link" id="btn-contador">Reiniciar contador</button>
+        (solo si volviste a cargar el firmware y la ESP32 empezó de cero)</p>
+    </details>
+
+    <details class="al-card">
+      <summary>Cómo dejar el celular vigilando</summary>
+      <ol class="al-pasos">
+        <li>Pon el celular a cargar con esta página abierta y el <b>volumen al máximo</b>.</li>
+        <li>Toca <b>Conectar con la ESP32</b> y elige <b>SilbidoAlarma</b>. La primera vez, escribe el secreto en Ajustes.</li>
+        <li>Toca <b>Pantalla completa</b> y fija la pantalla para que nadie pueda salir de la página: en Android, <i>Ajustes → Seguridad → Fijar app</i>, y luego en apps recientes toca el ícono de Chrome → <i>Fijar</i>.</li>
+        <li>Silba tu melodía <b>Armar</b> cerca del micrófono del protoboard. Tienes <b>10 s</b> para alejarte.</li>
+        <li>Al volver, silba <b>Desarmar</b> antes de tomar el celular. Si lo tomas armado, tienes <b>3 s</b> de pitidos para desarmar antes de la sirena.</li>
+      </ol>
+      <p class="al-nota">La página tiene que quedar abierta y con la pantalla encendida: si bloqueas el celular o cambias de app, deja de vigilar. Si se pierde el Bluetooth, la alarma conserva su estado y vuelve a conectarse sola.</p>
+    </details>
+
+    <section class="al-card">
+      <h2>Registro</h2>
+      <ol class="al-registro" id="registro"></ol>
+    </section>
+  </main>
+
+  <script type="module" src="js/alarma/app.js"></script>
+</body>
+</html>
