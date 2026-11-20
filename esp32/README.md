@@ -41,6 +41,18 @@ INMP441 ─I2S 16 kHz─► ESP32: bloqueo DC → pasa-banda (filtro.h) → gana
 
 Cada 10 ms se envía una trama: `A5 5A | secuencia | n=160 | estado | 160 × int16 LE | suma`. Son 32,6 kB/s, el 35 % de lo que da el enlace a 921600 baudios. La web reconstruye las tramas aunque lleguen partidas, descarta las corruptas y cuenta las perdidas.
 
+## `silbido_adc/`: micrófono comercial (módulo de sonido + LM358)
+
+Es la alternativa al INMP441, con piezas que se consiguen en cualquier tienda. El circuito, con su esquemático y el montaje en baquela perforada, está en [`../hardware/electret.html`](../hardware/electret.html).
+
+```
+módulo de sonido (AO) → LM358 ×47, 340 Hz–7,2 kHz → GPIO34 → ADC a 64 kHz → FIR 7 kHz + diezmado ×4 → 16 kHz → DC + filtro.h → USB
+```
+
+- Usa el mismo protocolo y los mismos comandos que `silbido_id`: en la web se usa igual, con **Usar ESP32 (USB)**.
+- Con `N` en el Monitor Serie, además del nivel, muestra `adc_crudo` (debe rondar el centro, ~1,65 V) y `fs_adc` (debe dar ~64000).
+- La ganancia digital empieza en 0 dB, porque el LM358 ya amplifica ×47.
+
 ## `reconocedor_autonomo/`
 
 Es el firmware completo de reconocimiento dentro de la ESP32. Incluye la FFT doble (dos pistas en una FFT compleja), el DTW con dos filas y el comando `p` para comparar el resultado con la web usando un audio embebido. Los perfiles se exportan desde la web en *Perfiles → ESP32 autónoma (perfil.h)*, o con `npm run esp32`.

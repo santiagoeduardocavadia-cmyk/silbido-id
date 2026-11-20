@@ -107,6 +107,8 @@ tests/dsp.test.mjs    pruebas: FFT vs DFT, Butterworth vs fórmula analógica, P
 
 🎛️ **Firmware**: [`esp32/`](esp32/README.md). La ESP32 **filtra** la señal del INMP441 (bloqueo de DC → pasa-banda Butterworth/FIR → ganancia con limitador suave) y la manda por USB. En la web, **Grabar → Usar ESP32 (USB)** la usa como micrófono. También hay un reconocedor autónomo que decide dentro de la placa.
 
+🎤 **Alternativa con micrófono comercial** (módulo de sonido + amplificador LM358, montaje en baquela): [`hardware/electret.html`](hardware/electret.html) y firmware `esp32/silbido_adc`.
+
 📘 **Informe técnico completo** (hardware, I2S, teoría de los filtros, auto-sintonía, DTW, red neuronal): [`docs/informe-tecnico.md`](docs/informe-tecnico.md).
 
 ### Auto-sintonía del filtro

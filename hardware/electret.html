@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Micrófono con LM358 · Silbido ID</title>
+  <meta name="description" content="Circuito con micrófono comercial (módulo de sonido) y amplificador LM358 con filtro, montado en baquela perforada, para la ESP32.">
+  <meta name="theme-color" content="#080a10">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%233dd0ee'/%3E%3Cpath d='M5 16c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-14 5-14 2.5 7 5 7' fill='none' stroke='%2305121a' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="hardware.css">
+  <link rel="stylesheet" href="electret.css">
+  <script>
+    try { var t = localStorage.getItem('silbido-id:theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <a class="skip" href="#main">Saltar al contenido</a>
+  <header class="app-header">
+    <div class="header-inner">
+      <a class="brand" href="../index.html#grabar" aria-label="Volver a Silbido ID">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="36" height="36"><defs><linearGradient id="brand-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b49bff"/><stop offset="1" stop-color="#3dd0ee"/></linearGradient></defs><rect width="32" height="32" rx="10" fill="url(#brand-g)"/><path d="M5 16c2.5 0 2.5-7 5-7s2.5 14 5 14 2.5-14 5-14 2.5 7 5 7" fill="none" stroke="#05121a" stroke-width="2.6" stroke-linecap="round"/></svg>
+        </span>
+        <span class="brand-text"><strong>Silbido ID</strong><small>Micrófono + LM358</small></span>
+      </a>
+      <nav class="tabs" aria-label="Secciones de la página">
+        <button type="button" data-go="esquema" aria-selected="true"><span class="tab-ico" data-icon="chip"></span><span class="tab-label">Esquemático</span></button>
+        <button type="button" data-go="baquela" aria-selected="false"><span class="tab-ico" data-icon="heat"></span><span class="tab-label">Baquela</span></button>
+        <button type="button" data-go="conexiones" aria-selected="false"><span class="tab-ico" data-icon="sliders"></span><span class="tab-label">Conexiones</span></button>
+        <button type="button" data-go="materiales" aria-selected="false"><span class="tab-ico" data-icon="table"></span><span class="tab-label">Materiales</span></button>
+        <button type="button" data-go="montaje" aria-selected="false"><span class="tab-ico" data-icon="check"></span><span class="tab-label">Montaje</span></button>
+      </nav>
+      <button type="button" class="icon-btn theme-btn" id="theme-btn" aria-label="Cambiar tema"></button>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="tab-panel">
+      <a class="back-link" href="index.html"><span data-icon="redo"></span>Volver al circuito con INMP441</a>
+
+      <section class="hw-hero">
+        <p class="eyebrow">Micrófono comercial · alternativa al INMP441</p>
+        <h1>Módulo de sonido + amplificador LM358</h1>
+        <p class="lead">El micrófono electret del módulo de sonido da una señal de pocos milivoltios. Una etapa con el <b>LM358</b> la amplifica <b>47 veces</b> y ya la recorta a la banda útil (340 Hz – 7,2 kHz). La ESP32 la lee con su ADC a 64 kHz y hace el filtrado fino en digital.</p>
+        <div class="stats">
+          <div><b>×47</b><span>ganancia (33 dB)</span></div>
+          <div><b>340 Hz – 7,2 kHz</b><span>banda analógica</span></div>
+          <div><b>16 piezas</b><span>en baquela de 18 × 13 agujeros</span></div>
+          <div><b>$12.950</b><span>en Sumador (sin la baquela)</span></div>
+        </div>
+      </section>
+
+      <section id="esquema" class="hw-section">
+        <div class="section-head"><div><h2>Esquemático</h2><p class="muted">Pasa el cursor por un cable o por una etiqueta de color para resaltar esa conexión en el esquemático y en la baquela.</p></div>
+          <button type="button" class="btn ghost sm" id="sch-dl"><span data-icon="download"></span>Descargar SVG</button></div>
+        <div class="net-chips"></div>
+        <article class="card"><div class="sch-wrap" id="sch-host"></div></article>
+        <div class="grid two">
+          <article class="card">
+            <h3>Cómo funciona</h3>
+            <ul class="tight">
+              <li><b>R1 + C1 + C4</b>: filtran los 3,3 V de la ESP32 (que traen ruido del WiFi) antes de alimentar el micrófono. Es un pasa-bajos RC con corte en f = 1/(2π·100 Ω·100 µF) ≈ 16 Hz.</li>
+              <li><b>R3, R4 y C5</b>: dividen VA a la mitad (1,65 V). <b>U1B</b> (la otra mitad del LM358) es un seguidor que entrega esa tensión con baja impedancia: es <b>VREF</b>, la "tierra virtual" alrededor de la cual oscila la señal.</li>
+              <li><b>C2 + R2</b>: bloquean la continua del micrófono y forman el <b>pasa-altos</b> (339 Hz).</li>
+              <li><b>U1A</b> en configuración <b>inversora</b>: ganancia −R5/R2 = −47. <b>C6</b> en paralelo con R5 hace que la ganancia baje por encima de 7,2 kHz: es el <b>pasa-bajos</b>.</li>
+              <li><b>R6</b> (1 kΩ) protege la entrada del ADC si la salida se sale de rango.</li>
+              <li><b>C3 + C7</b>: desacoplo de los 5 V del LM358, pegados al chip.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>¿Por qué el LM358 va a 5 V?</h3>
+            <p class="muted small">Es el amplificador que hay disponible. Su salida solo llega hasta unos V<sub>CC</sub> − 1,5 V. Con 3,3 V quedaría muy poco margen; con 5 V la salida puede ir de ~0 a ~3,5 V, y alrededor de VREF = 1,65 V tiene ±1,5 V de excursión. Eso cubre casi todo el rango del ADC de la ESP32 (0 – 3,1 V con atenuación de 11 dB).</p>
+            <p class="muted small">Sus entradas aceptan de 0 a V<sub>CC</sub> − 1,5 V = 3,5 V, y VREF (1,65 V) queda dentro. El producto ganancia-ancho de banda (~1 MHz) dividido entre la ganancia (47) da ~21 kHz: suficiente para 7 kHz.</p>
+            <p class="muted small">Si al silbar muy cerca la señal satura, cambia R5 por 220 kΩ (ganancia ×22) y C6 por 100 pF para mantener el corte en ~7 kHz.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="baquela" class="hw-section">
+        <div class="section-head"><div><h2>Montaje en la baquela</h2><p class="muted">Baquela universal perforada (paso 2,54 mm). Se usan 18 × 13 agujeros: cabe en una de 5 × 7 cm. Las columnas tienen letras (A–R) y las filas números (1–13) para que puedas contar los agujeros.</p></div>
+          <div class="seg sm" role="radiogroup" id="board-side" aria-label="Lado de la baquela">
+            <button type="button" data-side="top" aria-pressed="true">Componentes (arriba)</button>
+            <button type="button" data-side="bottom" aria-pressed="false">Soldadura (abajo)</button>
+          </div></div>
+        <div class="net-chips"></div>
+        <article class="card board-card">
+          <div class="board-wrap" id="board-host"></div>
+          <p class="muted small" id="board-note">Vista desde arriba, el lado donde van los componentes. Las líneas tenues son las pistas que van por debajo.</p>
+          <p class="small" id="board-check"></p>
+        </article>
+        <div class="grid two">
+          <article class="card">
+            <h3>Posición de cada pieza</h3>
+            <div class="table-wrap"><table class="table" id="pos-table"><thead><tr><th>Pieza</th><th>Valor</th><th>Agujeros</th></tr></thead><tbody></tbody></table></div>
+          </article>
+          <article class="card">
+            <h3>Cómo hacer las pistas en la baquela verde</h3>
+            <ul class="tight">
+              <li>En la baquela perforada cada agujero es una isla. Las pistas se hacen <b>por debajo</b>, uniendo los agujeros con un <b>alambre desnudo</b> (sirve una pata cortada de una resistencia) soldado en cada punto, o con un hilo de estaño entre agujeros vecinos.</li>
+              <li>Para pistas largas (los rieles de GND y de VA) usa alambre desnudo y suéldalo cada 2 o 3 agujeros.</li>
+              <li>El <b>puente</b> (de G10 a L10) es un cable con forro por el lado de los componentes: pasa por encima de otras pistas sin tocarlas.</li>
+              <li>Como es doble cara, el estaño sube por el agujero: cuida que no se una con el agujero de al lado.</li>
+              <li>Dobla las patas de las resistencias a 10,16 mm (4 agujeros) y las de los condensadores pequeños a 5,08 mm (2 agujeros).</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="conexiones" class="hw-section">
+        <h2>Conexiones con cables dupont</h2>
+        <div class="grid two">
+          <article class="card">
+            <h3>J1 → ESP32</h3>
+            <table class="table"><thead><tr><th>Baquela</th><th>ESP32 DevKit V1</th><th>Nota</th></tr></thead><tbody>
+              <tr><td>R4 · 5V</td><td><b>VIN</b></td><td>5 V del USB (abajo a la izquierda, junto a GND)</td></tr>
+              <tr><td>R5 · 3V3</td><td><b>3V3</b></td><td>abajo a la derecha</td></tr>
+              <tr><td>R6 · GPIO34</td><td><b>D34</b></td><td>4.º pin del lado izquierdo, contando desde EN</td></tr>
+              <tr><td>R7 · GND</td><td><b>GND</b></td><td>cualquiera de los dos</td></tr>
+            </tbody></table>
+          </article>
+          <article class="card">
+            <h3>J2 → módulo de sonido</h3>
+            <table class="table"><thead><tr><th>Baquela</th><th>Módulo</th><th>Nota</th></tr></thead><tbody>
+              <tr><td>A5 · VCC</td><td><b>+ / VCC</b></td><td>se alimenta con los 3,3 V filtrados</td></tr>
+              <tr><td>A6 · AO</td><td><b>AO</b></td><td>salida analógica del micrófono</td></tr>
+              <tr><td>A7 · GND</td><td><b>G / GND</b></td><td></td></tr>
+              <tr><td>—</td><td>DO</td><td>no se conecta</td></tr>
+            </tbody></table>
+            <p class="muted small">El orden de los pines del módulo cambia según el fabricante: guíate por lo que dice impreso en él.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="materiales" class="hw-section">
+        <h2>Materiales</h2>
+        <article class="card">
+          <p class="muted small">Ya están en tu carrito de Sumador (Santa Marta), salvo la baquela verde, que allá está agotada. Precios en pesos colombianos, del día en que se armó el carrito.</p>
+          <div class="table-wrap"><table class="table bom-table"><thead><tr><th>Cant.</th><th>Pieza</th><th>Uso</th><th>Precio</th></tr></thead><tbody>
+            <tr><td>1</td><td>Módulo sensor de sonido y voz</td><td>Micrófono electret (se usa AO)</td><td>$5.000</td></tr>
+            <tr><td>2</td><td>LM358 (DIP-8)</td><td>U1 (1 de repuesto)</td><td>$3.400</td></tr>
+            <tr><td>1</td><td>Zócalo de 8 pines</td><td>Para no soldar el LM358</td><td>$400</td></tr>
+            <tr><td>5</td><td>Resistencia 10 kΩ 1/4 W</td><td>R2, R3, R4</td><td>$400</td></tr>
+            <tr><td>5</td><td>Resistencia 1 kΩ 1/4 W</td><td>R6</td><td>$400</td></tr>
+            <tr><td>5</td><td>Resistencia 100 Ω 1/4 W</td><td>R1</td><td>$400</td></tr>
+            <tr><td>1</td><td>Resistencia 470 kΩ 1/4 W 1 %</td><td>R5 (ganancia)</td><td>$150</td></tr>
+            <tr><td>2</td><td>Condensador cerámico 47 pF</td><td>C6</td><td>$200</td></tr>
+            <tr><td>2</td><td>Condensador poliéster 47 nF</td><td>C2</td><td>$800</td></tr>
+            <tr><td>2</td><td>Condensador multicapa 150 nF</td><td>C3, C4 (desacoplo)</td><td>$800</td></tr>
+            <tr><td>2</td><td>Electrolítico 10 µF 25 V</td><td>C5, C7</td><td>$600</td></tr>
+            <tr><td>1</td><td>Electrolítico 100 µF 25 V</td><td>C1</td><td>$400</td></tr>
+            <tr class="total"><td></td><td colspan="2"><b>Total en el carrito</b></td><td><b>$12.950</b></td></tr>
+            <tr><td>1</td><td>Baquela universal perforada <b>doble cara</b> 5 × 7 cm (verde)</td><td>Agotada en Sumador: búscala en otra tienda</td><td>—</td></tr>
+            <tr><td>1</td><td>Tira de pines macho (7 pines)</td><td>J1 y J2, para conectar los cables dupont</td><td>—</td></tr>
+          </tbody></table></div>
+        </article>
+      </section>
+
+      <section id="montaje" class="hw-section">
+        <h2>Pasos de montaje</h2>
+        <ol class="steps">
+          <li><div><h3>Primero lo más bajo</h3><p>Suelda las resistencias R1–R6 y los condensadores pequeños (C2, C3, C4, C6) siguiendo la tabla de posiciones. Después el zócalo, con la muesca hacia la <b>izquierda</b> (columna H).</p></div></li>
+          <li><div><h3>Electrolíticos con la polaridad correcta</h3><p>C1, C5 y C7 tienen una franja que marca la pata <b>negativa (−)</b>. La pata + va en el agujero marcado con + en el dibujo.</p></div></li>
+          <li><div><h3>Pines de conexión</h3><p>Suelda 4 pines macho en R4–R7 (J1) y 3 en A5–A7 (J2).</p></div></li>
+          <li><div><h3>Pistas por debajo</h3><p>Voltea la baquela y usa la vista <b>Soldadura (abajo)</b>: hace las pistas con alambre desnudo o estaño. Empieza por los rieles de GND (fila 13) y de VA (fila 1).</p></div></li>
+          <li><div><h3>El puente</h3><p>Por arriba, suelda un cable con forro de G10 a L10.</p></div></li>
+          <li><div><h3>Revisa antes de energizar</h3><ul class="tight"><li>Sin el LM358 en el zócalo, mide continuidad entre 5V y GND, y entre 3V3 y GND: <b>no deben pitar</b>.</li><li>Conecta el USB y mide: pin 8 del zócalo ≈ 5 V, VA ≈ 3,3 V, pin 5 ≈ 1,65 V.</li><li>Desconecta, pon el LM358 (muesca a la izquierda) y vuelve a conectar.</li></ul></div></li>
+          <li><div><h3>Prueba</h3><p>Sube el firmware <code>esp32/silbido_adc</code> y en la web usa <b>Grabar → Usar ESP32 (USB)</b>. El panel de estado debe marcar el micrófono en verde y la barra de nivel subir al silbar.</p></div></li>
+        </ol>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="electret.js"></script>
+</body>
+</html>
