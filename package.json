@@ -5,9 +5,10 @@
   "description": "Web para grabar, filtrar, analizar y reconocer silbidos (Procesamiento de Señales II).",
   "type": "module",
   "scripts": {
-    "test": "node tests/dsp.test.mjs",
+    "test": "node tests/dsp.test.mjs && node tests/alarma.test.mjs",
     "start": "node scripts/serve.mjs 8000",
     "esp32": "node scripts/esp32-perfiles.mjs",
-    "esp32:filtro": "node scripts/esp32-filtro.mjs"
+    "esp32:filtro": "node scripts/esp32-filtro.mjs",
+    "esp32:alarma": "node scripts/esp32-perfiles.mjs --alarma"
   }
 }

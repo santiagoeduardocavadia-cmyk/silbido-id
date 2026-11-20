@@ -4,9 +4,13 @@
  *
  *   node scripts/esp32-perfiles.mjs                     → perfiles demo (Ana y Beto)
  *   node scripts/esp32-perfiles.mjs mi-perfil.json ...  → perfiles exportados desde la web
+ *   node scripts/esp32-perfiles.mjs --alarma armar.json desarmar.json
+ *                                                       → perfil.h de la alarma (esp32/alarma_silbido)
+ *   node scripts/esp32-perfiles.mjs --alarma            → perfiles demo para la alarma (Armar = Ana, Desarmar = Beto)
  *
  * Escribe esp32/reconocedor_autonomo/perfil.h y esp32/reconocedor_autonomo/prueba_audio.h (audio de prueba con los
- * valores que calcula la web, para el comando "p" del firmware).
+ * valores que calcula la web, para el comando "p" del firmware). Con --alarma escribe solo
+ * esp32/alarma_silbido/perfil.h: los nombres de los perfiles deben contener "Armar" y "Desarmar".
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -19,7 +23,10 @@ import { buildProfile } from '../js/dsp/matcher.js';
 const FS = 16000;
 const DEFAULT_FILTER = { type: 'iir', fl: 1000, fh: 4000, order: 4, taps: 101, win: 'hamming' };
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = join(root, 'esp32', 'reconocedor_autonomo');
+const args = process.argv.slice(2);
+const alarma = args.includes('--alarma');
+const outRel = alarma ? 'esp32/alarma_silbido' : 'esp32/reconocedor_autonomo';
+const outDir = join(root, ...outRel.split('/'));
 
 function demoProfile(person, seedBase) {
   const samples = [1, 2, 3, 4, 5].map((i) => synthWhistle(person, { fs: FS, dur: 5, seed: seedBase + i }));
@@ -35,13 +42,13 @@ function b64ToFloat(b64) {
   return Float32Array.from(i16, (v) => v / 32767);
 }
 
-const files = process.argv.slice(2);
+const files = args.filter((a) => a !== '--alarma');
 let profiles;
 let test;
 if (!files.length) {
   console.log('Sin archivos: se generan los perfiles de demostración.');
-  const ana = demoProfile(DEMO_PEOPLE.ana, 100);
-  const beto = demoProfile(DEMO_PEOPLE.beto, 200);
+  const ana = demoProfile(alarma ? { ...DEMO_PEOPLE.ana, name: 'Armar (demo Ana)' } : DEMO_PEOPLE.ana, 100);
+  const beto = demoProfile(alarma ? { ...DEMO_PEOPLE.beto, name: 'Desarmar (demo Beto)' } : DEMO_PEOPLE.beto, 200);
   profiles = [ana.profile, beto.profile];
   test = { samples: synthWhistle(DEMO_PEOPLE.ana, { fs: FS, dur: 5, seed: 99 }), description: 'silbido sintético nuevo de Ana (semilla 99)' };
 } else {
@@ -62,9 +69,19 @@ if (profiles.length > 4) {
   profiles = profiles.slice(0, 4);
 }
 
+if (alarma) {
+  const low = profiles.map((p) => p.name.toLowerCase());
+  const des = low.findIndex((n) => n.includes('desarm'));
+  const arm = low.findIndex((n, i) => i !== des && n.includes('arm'));
+  if (des < 0 || arm < 0) {
+    console.error('Para la alarma hacen falta dos perfiles: uno cuyo nombre contenga "Armar" y otro con "Desarmar".');
+    process.exit(1);
+  }
+}
+
 writeFileSync(join(outDir, 'perfil.h'), profilesToHeader(profiles, FS));
-console.log(`Escrito esp32/reconocedor_autonomo/perfil.h (${profiles.length} perfil(es))`);
-if (test) {
+console.log(`Escrito ${outRel}/perfil.h (${profiles.length} perfil(es))`);
+if (test && !alarma) {
   writeFileSync(join(outDir, 'prueba_audio.h'), testAudioHeader(test.samples, profiles, { fs: FS, description: test.description }));
-  console.log(`Escrito esp32/reconocedor_autonomo/prueba_audio.h (${test.description})`);
+  console.log(`Escrito ${outRel}/prueba_audio.h (${test.description})`);
 }
