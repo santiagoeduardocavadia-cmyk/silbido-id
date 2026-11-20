@@ -88,13 +88,16 @@ js/dsp/               núcleo de señales (sin dependencias, también corre en N
   matcher.js          DTW, puntaje de tomas, perfil y verificación
   autofilter.js       auto-sintonía: elige el filtro (IIR o FIR y su banda) a partir de las tomas
   ai.js               inteligencia: red neuronal propia, entrenamiento, predicción y explicación
+  synth.js            silbidos sintéticos para la demostración
 js/esp32.js           genera perfil.h y prueba_audio.h para el reconocedor autónomo
 js/esp32-serial.js    la ESP32 como micrófono por USB (Web Serial, lector de tramas)
 esp32/silbido_id/     firmware principal: filtra el INMP441 y manda el audio por USB
 esp32/reconocedor_autonomo/  firmware que reconoce dentro de la ESP32
+esp32/silbido_adc/    firmware para el micrófono comercial + LM358 (ADC a 64 kHz)
+esp32/diagnostico/    prueba de la conexión I2S del INMP441
 docs/informe-tecnico.md      informe técnico completo
 hardware/             circuito: esquemático, vista 3D, conexiones y montaje
-  synth.js            silbidos sintéticos para la demostración
+  electret.html       alternativa con módulo de sonido + LM358 en baquela
 js/audio.js           micrófono (getUserMedia + AudioWorklet), re-muestreo, archivos, reproducción
 js/ui/                gráficas en canvas y vista en vivo
 js/views/             lógica de cada pestaña
